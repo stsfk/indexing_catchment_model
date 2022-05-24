@@ -233,4 +233,4 @@ write_csv(data_process, file = "./data/CAMELS_US/CAMELS_US.csv")
 
 # Basic info --------------------------------------------------------------
 
-data_process %>% count(catchment_id) # 541 catchment
+data_process %>% count(catchment_id)
