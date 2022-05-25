@@ -51,10 +51,7 @@ data_raw <- similarity_m %>%
 # Recommender system ------------------------------------------------------
 
 data_process <- data_raw %>%
-  mutate(NNSE = 1 / (2 - NSE),# normalized NSE
-         catchment_id = factor(catchment_id, level = 1:length(unique(catchment_id))),
-         model_id = factor(model_id, level = 1:length(unique(model_id))),
-  ) %>% 
+  mutate(NNSE = 1 / (2 - NSE)*10) %>% 
   dplyr::select(
     catchment_id,
     model_id,
@@ -63,7 +60,7 @@ data_process <- data_raw %>%
 
 # spliting data
 v <- 5
-cv_folds <- vfold_cv(data_process, v = 5)
+cv_folds <- vfold_cv(data_process, v = v)
 
 # check if all catchments included in the training and test sets
 flag <- 0 # flag = 0 means the number of classes in training and test folds are the same
@@ -81,17 +78,13 @@ for (i in 1:nrow(cv_folds)){
   flag <- flag + temp1 - temp2 + temp3 - temp4
 }
 
-flag
+flag # test is passed if flag == 0
 
 # start training
 i <- 1
 
+# get training and test fold
 dtrain <- analysis(cv_folds$splits[[i]])
-dtest <- assessment(cv_folds$splits[[i]])
-
-# construct recommender model
-r = Reco()
-
 training_set <- data_memory(
   user_index = dtrain$catchment_id,
   item_index = dtrain$model_id,
@@ -99,12 +92,24 @@ training_set <- data_memory(
   index1 = T
 )
 
-opts = r$tune(training_set, opts = list(
-  dim = c(10),
-  lrate = c(0.001, 0.005, 0.1, 0.2),
-  nthread = 10,
-  niter = 20
-)) # 1:10
+dtest <- assessment(cv_folds$splits[[i]])
+test_set <- data_memory(
+  user_index = dtest$catchment_id,
+  item_index = dtest$model_id,
+  rating = dtest$rating,
+  index1 = T
+)
+
+# construct recommender model
+r = Reco()
+
+opts = r$tune(training_set,
+              opts = list(
+                dim = c(1:10)*2,
+                lrate = c(0.001, 0.005, 0.1, 0.2),
+                nthread = 10,
+                niter = 20
+              ))
 
 r$train(training_set, opts = c(opts$min, nthread = 10, niter = 20))
 
@@ -113,11 +118,6 @@ c(P, Q) %<-% r$output(out_memory(), out_memory())
 dim(P)
 dim(Q)
 
-test_set <- data_memory(
-  user_index = dtest$user_index,
-  item_index = dtest$item_index,
-  rating = dtest$rating
-)
 pred_rvec <- r$predict(test_set)
 
 gof(pred_rvec, dtest$rating)
@@ -130,6 +130,5 @@ opts$res %>%
   ggplot(aes(dim, loss)) +
   geom_point()+
   geom_line()+
-  scale_x_continuous(breaks = c(1:10)) +
   labs(x = "dimensions",
        y = "loss")
