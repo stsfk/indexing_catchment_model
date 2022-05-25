@@ -112,7 +112,7 @@ for (i in 1:nrow(cv_folds)) {
   
   opts = r$tune(training_set,
                 opts = list(
-                  dim = c(1:10) * 2,
+                  dim = c(1:25) * 2,
                   lrate = c(0.001, 0.005, 0.1, 0.2),
                   nthread = 10,
                   niter = 20
@@ -133,7 +133,6 @@ for (i in 1:nrow(cv_folds)) {
 save(cv_folds, Ps, Qs, Optim_paras, Optim_res, rs, file = "./data/mf_results.Rda")
 
 # Postprocessing ----------------------------------------------------------
-
 
 
 dim(P)
