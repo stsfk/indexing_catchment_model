@@ -14,6 +14,7 @@ pacman::p_load(tidyverse,
 # seed --------------------------------------------------------------------
 
 set.seed(1234)
+nthread <- 10 # number of CPU thread
 
 # data --------------------------------------------------------------------
 
@@ -78,42 +79,62 @@ for (i in 1:nrow(cv_folds)){
   flag <- flag + temp1 - temp2 + temp3 - temp4
 }
 
-flag # test is passed if flag == 0
+flag # pass the test if flag == 0
 
-# start training
-i <- 1
+# storage for experiment results in CV iterations
+Ps <- vector("list", nrow(cv_folds))
+Qs <- vector("list", nrow(cv_folds))
+Optim_paras <- vector("list", nrow(cv_folds))
+Optim_res <- vector("list", nrow(cv_folds))
+rs <- vector("list", nrow(cv_folds))
 
-# get training and test fold
-dtrain <- analysis(cv_folds$splits[[i]])
-training_set <- data_memory(
-  user_index = dtrain$catchment_id,
-  item_index = dtrain$model_id,
-  rating = dtrain$rating,
-  index1 = T
-)
+# iterate over CV folds
+for (i in 1:nrow(cv_folds)) {
+  # get training and test fold
+  dtrain <- analysis(cv_folds$splits[[i]])
+  training_set <- data_memory(
+    user_index = dtrain$catchment_id,
+    item_index = dtrain$model_id,
+    rating = dtrain$rating,
+    index1 = T
+  )
+  
+  dtest <- assessment(cv_folds$splits[[i]])
+  test_set <- data_memory(
+    user_index = dtest$catchment_id,
+    item_index = dtest$model_id,
+    rating = dtest$rating,
+    index1 = T
+  )
+  
+  # construct recommender model
+  r = Reco()
+  
+  opts = r$tune(training_set,
+                opts = list(
+                  dim = c(1:10) * 2,
+                  lrate = c(0.001, 0.005, 0.1, 0.2),
+                  nthread = 10,
+                  niter = 20
+                ))
+  
+  r$train(training_set, opts = c(opts$min, nthread = nthread, niter = 20))
+  
+  c(P, Q) %<-% r$output(out_memory(), out_memory())
+  
+  # save result
+  Ps[[i]] <- P
+  Qs[[i]] <- Q
+  Optim_paras[[i]] <- opts$min
+  Optim_res[[i]] <- opts$res
+  rs[[i]] <- r
+}
 
-dtest <- assessment(cv_folds$splits[[i]])
-test_set <- data_memory(
-  user_index = dtest$catchment_id,
-  item_index = dtest$model_id,
-  rating = dtest$rating,
-  index1 = T
-)
+save(cv_folds, Ps, Qs, Optim_paras, Optim_res, rs, file = "./data/mf_results.Rda")
 
-# construct recommender model
-r = Reco()
+# Postprocessing ----------------------------------------------------------
 
-opts = r$tune(training_set,
-              opts = list(
-                dim = c(1:10)*2,
-                lrate = c(0.001, 0.005, 0.1, 0.2),
-                nthread = 10,
-                niter = 20
-              ))
 
-r$train(training_set, opts = c(opts$min, nthread = 10, niter = 20))
-
-c(P, Q) %<-% r$output(out_memory(), out_memory())
 
 dim(P)
 dim(Q)
@@ -122,6 +143,15 @@ pred_rvec <- r$predict(test_set)
 
 gof(pred_rvec, dtest$rating)
 
+
+as_tibble()%>%
+  group_by(dim) %>%
+  summarise(loss = min(loss_fun)) %>%
+  ggplot(aes(dim, loss)) +
+  geom_point()+
+  geom_line()+
+  labs(x = "dimensions",
+       y = "loss")
 # code length vs. prediction errors
 opts$res %>%
   as_tibble()%>%
