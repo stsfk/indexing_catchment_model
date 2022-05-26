@@ -133,31 +133,64 @@ for (i in 1:nrow(cv_folds)) {
 save(cv_folds, Ps, Qs, Optim_paras, Optim_res, rs, file = "./data/mf_results.Rda")
 
 # Postprocessing ----------------------------------------------------------
+load("./data/mf_results.Rda")
+
+data_plot <- vector("list", nrow(cv_folds))
+r2s <- rep(0, nrow(cv_folds))
+rmses <- rep(0, nrow(cv_folds))
+maes <- rep(0, nrow(cv_folds))
+
+for (i in seq_along(data_plot)){
+  
+  # retrieve data and model
+  P <- Ps[[i]]
+  dtest <- assessment(cv_folds$splits[[i]])
+  test_set <- data_memory(
+    user_index = dtest$catchment_id,
+    item_index = dtest$model_id,
+    rating = dtest$rating,
+    index1 = T
+  )
+  
+  # predicting test set
+  pred_rvec <- r$predict(test_set)
+  
+  # goodness-of-fit
+  rmses[[i]] <- ModelMetrics::rmse(actual = dtest$rating, predicted = pred_rvec)
+  r2s[[i]] <- cor(dtest$rating, pred_rvec)^2
+  maes[[i]] <- hydroGOF::mae(sim = pred_rvec, obs = dtest$rating)
+  
+  # hyperparameter tuning results 
+  data_plot[[i]] <- Optim_res[[i]] %>%
+    group_by(dim) %>%
+    summarise(loss = min(loss_fun)) %>%
+    mutate(iter = i)
+  
+}
 
 
-dim(P)
-dim(Q)
+data_plot <- data_plot %>%
+  bind_rows()
 
-pred_rvec <- r$predict(test_set)
-
-gof(pred_rvec, dtest$rating)
-
-
-as_tibble()%>%
+data_plot2 <- data_plot %>%
   group_by(dim) %>%
-  summarise(loss = min(loss_fun)) %>%
-  ggplot(aes(dim, loss)) +
-  geom_point()+
-  geom_line()+
-  labs(x = "dimensions",
-       y = "loss")
-# code length vs. prediction errors
-opts$res %>%
-  as_tibble()%>%
-  group_by(dim) %>%
-  summarise(loss = min(loss_fun)) %>%
-  ggplot(aes(dim, loss)) +
-  geom_point()+
-  geom_line()+
-  labs(x = "dimensions",
-       y = "loss")
+  summarise(loss = mean(loss))
+  
+ggplot() +
+  geom_line(data = data_plot2, aes(dim, loss), color = "red") +
+  geom_line(data = data_plot, aes(dim, loss, group = iter), color = "steelblue", alpha = 0.5)+
+  theme_bw()+
+  labs(x = "Dimension of latent factor",
+       y = "Root mean square error (model rating)")
+
+
+
+
+
+
+
+
+
+
+
+
