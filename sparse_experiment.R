@@ -9,7 +9,7 @@ pacman::p_load(tidyverse,
                hydroGOF,
                caret,
                tidymodels,
-               matlib)
+               mlrMBO)
 
 # seed --------------------------------------------------------------------
 
@@ -60,7 +60,7 @@ data_process <- data_raw %>%
   rename(rating = NNSE)
 
 data_process <- data_process %>%
-  sample_frac(0.05)
+  sample_frac(0.5)
 
 # splitting data
 
@@ -84,22 +84,97 @@ test_set <- data_memory(
   index1 = T
 )
 
+# experiment
+scoringFunction <- function(x){
+  
+  dim <- x["dim"] %>% unlist()
+  lrate <- x["lrate"] %>% unlist()
+  niter <- x["niter"] %>% unlist()
+  
+  costp_l1 <- x["costp_l1"] %>% unlist()
+  costp_l2 <- x["costp_l2"] %>% unlist()
+  costq_l1 <- x["costq_l1"] %>% unlist()
+  costq_l2 <- x["costq_l2"] %>% unlist()
+  
+  dim <- 5 * dim
+  lrate <- 10^lrate
+  niter <- 10 * niter
+  
+  r = Reco()
+  
+  r$train(training_set, opts = c(opts$min, nthread = 4, niter = niter, verbose = F))
+  
+  pred_rvec <- r$predict(test_set)
+  r2 <- cor(dtest$rating, pred_rvec)^2
+  
+  score <- r2
+  return(score)
+} 
+
+obj_fun <- makeSingleObjectiveFunction(
+  fn = scoringFunction,
+  par.set = makeParamSet(
+    makeIntegerParam("dim", lower= 1, upper = 20),
+    makeNumericParam("lrate",  lower= -4,   upper = -0.5),
+    makeIntegerParam("niter", lower = 1,  upper = 20),
+    makeNumericParam("costp_l1",  lower= 0,   upper = 1),
+    makeNumericParam("costp_l2",  lower= 0,   upper = 1),
+    makeNumericParam("costq_l1",  lower= 0,   upper = 1),
+    makeNumericParam("costq_l2",  lower= 0,   upper = 1)
+  ),
+  has.simple.signature = FALSE,
+  minimize = FALSE
+)
+
+des = generateDesign(
+  n = 4 * getNumberOfParameters(obj_fun),
+  par.set = getParamSet(obj_fun),
+  fun = lhs::randomLHS
+)
+
+des$y = apply(des, 1, obj_fun)
+
+control <- makeMBOControl() %>%
+  setMBOControlTermination(., iters = 100 - 4 * getNumberOfParameters(obj_fun))
+
+run <- mbo(
+  fun = obj_fun,
+  design = des,
+  control = control,
+  show.info = TRUE
+)
+
+run$best.ind
+run$y
+
+plot(run)
+
+
+
+
+
+
+# recycle
+
+
 # construct recommender model
 r = Reco()
 
 opts = r$tune(training_set,
               opts = list(
-                dim = c(10,25,50), #c(1:25) * 2,
+                dim = c(5, 10,20,50), #c(1:25) * 2,
                 lrate = c(0.001, 0.005, 0.1, 0.2),
                 nthread = 10,
-                niter = 20
+                niter = 30,
+                verbose = T
               ))
 
-r$train(training_set, opts = c(opts$min, nthread = nthread, niter = 20))
-
+r$train(training_set, opts = c(opts$min, nthread = nthread, niter = 1000))
 c(P, Q) %<-% r$output(out_memory(), out_memory())
 
 # Postprocessing ----------------------------------------------------------
+pred_rvec <- r$predict(test_set)
+cor(dtest$rating, pred_rvec)^2
 
 # retrieve data and model)
 
@@ -110,6 +185,4 @@ pred_rvec <- r$predict(test_set)
 rmse <- ModelMetrics::rmse(actual = dtest$rating, predicted = pred_rvec)
 r2 <- cor(dtest$rating, pred_rvec)^2
 mae <- hydroGOF::mae(sim = pred_rvec, obs = dtest$rating)
-
-
 
