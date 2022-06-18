@@ -59,127 +59,57 @@ data_process <- data_raw %>%
     NNSE) %>%
   rename(rating = NNSE)
 
-# spliting data
-v <- 5
-cv_folds <- vfold_cv(data_process, v = v)
+data_process <- data_process %>%
+  sample_frac(0.05)
 
-# check if all catchments included in the training and test sets
-flag <- 0 # flag = 0 means the number of classes in training and test folds are the same
+# splitting data
 
-for (i in 1:nrow(cv_folds)){
-  training_set <- analysis(cv_folds$splits[[i]])
-  test_set <- assessment(cv_folds$splits[[i]])
-  
-  temp1 <- training_set %>% count(catchment_id) %>% nrow()
-  temp2 <- test_set %>% count(catchment_id) %>% nrow()
-  
-  temp3 <- training_set %>% count(model_id) %>% nrow()
-  temp4 <- test_set %>% count(model_id) %>% nrow()
-  
-  flag <- flag + temp1 - temp2 + temp3 - temp4
-}
+data_split <- initial_split(data_process, prop = 4/5, strata = NULL)
 
-flag # pass the test if flag == 0
+dtrain <- analysis(data_split)
+dtest <- assessment(data_split)
 
-# storage for experiment results in CV iterations
-Ps <- vector("list", nrow(cv_folds))
-Qs <- vector("list", nrow(cv_folds))
-Optim_paras <- vector("list", nrow(cv_folds))
-Optim_res <- vector("list", nrow(cv_folds))
-rs <- vector("list", nrow(cv_folds))
+# get training and test fold
+training_set <- data_memory(
+  user_index = dtrain$catchment_id,
+  item_index = dtrain$model_id,
+  rating = dtrain$rating,
+  index1 = T
+)
 
-# iterate over CV folds
-for (i in 1:nrow(cv_folds)) {
-  # get training and test fold
-  dtrain <- analysis(cv_folds$splits[[i]])
-  training_set <- data_memory(
-    user_index = dtrain$catchment_id,
-    item_index = dtrain$model_id,
-    rating = dtrain$rating,
-    index1 = T
-  )
-  
-  dtest <- assessment(cv_folds$splits[[i]])
-  test_set <- data_memory(
-    user_index = dtest$catchment_id,
-    item_index = dtest$model_id,
-    rating = dtest$rating,
-    index1 = T
-  )
-  
-  # construct recommender model
-  r = Reco()
-  
-  opts = r$tune(training_set,
-                opts = list(
-                  dim = c(1:25) * 2,
-                  lrate = c(0.001, 0.005, 0.1, 0.2),
-                  nthread = 10,
-                  niter = 20
-                ))
-  
-  r$train(training_set, opts = c(opts$min, nthread = nthread, niter = 20))
-  
-  c(P, Q) %<-% r$output(out_memory(), out_memory())
-  
-  # save result
-  Ps[[i]] <- P
-  Qs[[i]] <- Q
-  Optim_paras[[i]] <- opts$min
-  Optim_res[[i]] <- opts$res
-  rs[[i]] <- r
-}
+test_set <- data_memory(
+  user_index = dtest$catchment_id,
+  item_index = dtest$model_id,
+  rating = dtest$rating,
+  index1 = T
+)
 
-save(cv_folds, Ps, Qs, Optim_paras, Optim_res, rs, file = "./data/mf_results.Rda")
+# construct recommender model
+r = Reco()
+
+opts = r$tune(training_set,
+              opts = list(
+                dim = c(10,25,50), #c(1:25) * 2,
+                lrate = c(0.001, 0.005, 0.1, 0.2),
+                nthread = 10,
+                niter = 20
+              ))
+
+r$train(training_set, opts = c(opts$min, nthread = nthread, niter = 20))
+
+c(P, Q) %<-% r$output(out_memory(), out_memory())
 
 # Postprocessing ----------------------------------------------------------
-load("./data/mf_results.Rda")
 
-data_plot <- vector("list", nrow(cv_folds))
-r2s <- rep(0, nrow(cv_folds))
-rmses <- rep(0, nrow(cv_folds))
-maes <- rep(0, nrow(cv_folds))
+# retrieve data and model)
 
-for (i in seq_along(data_plot)){
-  
-  # retrieve data and model
-  P <- Ps[[i]]
-  dtest <- assessment(cv_folds$splits[[i]])
-  test_set <- data_memory(
-    user_index = dtest$catchment_id,
-    item_index = dtest$model_id,
-    rating = dtest$rating,
-    index1 = T
-  )
-  
-  # predicting test set
-  pred_rvec <- r$predict(test_set)
-  
-  # goodness-of-fit
-  rmses[[i]] <- ModelMetrics::rmse(actual = dtest$rating, predicted = pred_rvec)
-  r2s[[i]] <- cor(dtest$rating, pred_rvec)^2
-  maes[[i]] <- hydroGOF::mae(sim = pred_rvec, obs = dtest$rating)
-  
-  # hyperparameter tuning results 
-  data_plot[[i]] <- Optim_res[[i]] %>%
-    group_by(dim) %>%
-    summarise(loss = min(loss_fun)) %>%
-    mutate(iter = i)
-  
-}
+# predicting test set
+pred_rvec <- r$predict(test_set)
+
+# goodness-of-fit
+rmse <- ModelMetrics::rmse(actual = dtest$rating, predicted = pred_rvec)
+r2 <- cor(dtest$rating, pred_rvec)^2
+mae <- hydroGOF::mae(sim = pred_rvec, obs = dtest$rating)
 
 
-data_plot <- data_plot %>%
-  bind_rows()
-
-data_plot2 <- data_plot %>%
-  group_by(dim) %>%
-  summarise(loss = mean(loss))
-
-ggplot() +
-  geom_line(data = data_plot2, aes(dim, loss), color = "red") +
-  geom_line(data = data_plot, aes(dim, loss, group = iter), color = "steelblue", alpha = 0.5)+
-  theme_bw()+
-  labs(x = "Dimension of latent factor",
-       y = "Root mean square error (model rating)")
 
