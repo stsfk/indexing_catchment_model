@@ -9,7 +9,8 @@ pacman::p_load(tidyverse,
                hydroGOF,
                caret,
                tidymodels,
-               mlrMBO)
+               mlrMBO,
+               rsample)
 
 # seed --------------------------------------------------------------------
 
@@ -21,7 +22,7 @@ nthread <- 10 # number of CPU thread
 similarity_m <- read_csv("./data/SM.csv",
                          col_names = c("KGE", "NSE", "RMSE"))
 
-model_list  <- c(
+model_class  <- c(
   'm_01_collie1_1p_1s',
   'm_05_ihacres_7p_1s',
   'm_07_gr4j_4p_2s',
@@ -34,30 +35,37 @@ model_list  <- c(
   'm_37_hbv_15p_5s'
 )
 
-n_catchment <- 533
-n_paras <- nrow(similarity_m)/n_catchment/length(model_list) # 533 catchments, n_paras sets of paras for each model
-catchment_id <- rep(1:n_catchment, each = n_paras)
+n_catchments <- 533
+n_model_classes <- length(model_class)
+n_model_instances <-  nrow(similarity_m)/n_catchments/n_model_classes # number of instance of each model class
 
+catchment_id <- rep(1:n_catchments, each = n_model_instances)
 data_raw <- similarity_m %>%
-  bind_cols(expand_grid(model_list, catchment_id)) %>%
-  rename(model_name = model_list) %>%
+  bind_cols(expand_grid(model_class, catchment_id)) %>%
   mutate(
-    para_set_id = rep(1:n_paras, n() / n_paras),
-    model_id = paste(model_name, para_set_id, sep = "_"),
+    instance_id = rep(1:n_model_instances, n()/n_model_instances),
+    model_id = paste(model_class, instance_id, sep = "_"),
     model_id = factor(model_id, levels = unique(model_id)),
     model_id = as.integer(model_id) # assign a unique id to each model
   ) %>%
-  select(catchment_id, model_name, model_id, KGE, NSE, RMSE)
-
-# Recommender system ------------------------------------------------------
+  select(model_class, catchment_id, model_id, KGE, NSE, RMSE)
 
 data_process <- data_raw %>%
-  mutate(NNSE = 1 / (2 - NSE)*10) %>% 
-  dplyr::select(
-    catchment_id,
-    model_id,
-    NNSE) %>%
+  mutate(NNSE = 1 / (2 - NSE) * 10) %>%
+  dplyr::select(catchment_id,
+                model_id,
+                NNSE) %>%
+  mutate(
+    catchment_id = factor(catchment_id, levels = c(1:n_catchments)),
+    model_id = factor(model_id, levels = c(1:(n_model_classes*n_model_instances)))
+  ) %>%
   rename(rating = NNSE)
+
+
+# Experiments -------------------------------------------------------------
+
+initial_split(data_process, prop = 0.1, strata = model_id)
+
 
 data_process <- data_process %>%
   sample_frac(0.5)
@@ -102,7 +110,7 @@ scoringFunction <- function(x){
   
   r = Reco()
   
-  r$train(training_set, opts = c(opts$min, nthread = 4, niter = niter, verbose = F))
+  r$train(training_set, opts = c(opts$min, nthread = nthread, niter = niter, verbose = F))
   
   pred_rvec <- r$predict(test_set)
   r2 <- cor(dtest$rating, pred_rvec)^2
@@ -110,6 +118,9 @@ scoringFunction <- function(x){
   score <- r2
   return(score)
 } 
+
+
+
 
 obj_fun <- makeSingleObjectiveFunction(
   fn = scoringFunction,
