@@ -9,8 +9,8 @@ pacman::p_load(tidyverse,
                hydroGOF,
                caret,
                tidymodels,
-               mlrMBO,
-               rsample)
+               mlrMBO
+               )
 
 # seed --------------------------------------------------------------------
 
@@ -55,20 +55,56 @@ data_process <- data_raw %>%
   dplyr::select(catchment_id,
                 model_id,
                 NNSE) %>%
-  mutate(
-    catchment_id = factor(catchment_id, levels = c(1:n_catchments)),
-    model_id = factor(model_id, levels = c(1:(n_model_classes*n_model_instances)))
-  ) %>%
-  rename(rating = NNSE)
+  rename(rating = NNSE) %>%
+  mutate(record_id = 1:n())
 
 
 # Experiments -------------------------------------------------------------
 
-initial_split(data_process, prop = 0.1, strata = model_id)
+frac <- 0.1
+train_portion <- 0.6
+val_portion <- 0.2
+test_portion <- 0.2
+
+data_sample <- data_process %>%
+  group_by(model_id) %>% 
+  sample_frac(frac) %>%
+  ungroup()
+
+data_train_val <- data_sample %>%
+  group_by(model_id) %>% 
+  sample_frac(train_portion + val_portion) %>%
+  ungroup()
+
+data_train <- data_train_val %>%
+  group_by(model_id) %>% 
+  sample_frac(train_portion/(val_portion+train_portion)) %>%
+  ungroup()
+
+data_val <- data_train_val %>%
+  filter(record_id %in% setdiff(data_train_val$record_id, data_train$record_id))
+
+data_test <- data_sample %>%
+  filter(record_id %in% setdiff(data_sample$record_id, data_train_val$record_id))
+
+list(
+  data_train = data_train %>% select(-record_id),
+  data_val = data_val %>% select(-record_id),
+  data_test = data_test %>% select(-record_id),
+  record_id_train = data_train$record_id,
+  record_id_val = data_val$record_id,
+  record_id_test = data_test$record_id
+)
 
 
-data_process <- data_process %>%
-  sample_frac(0.5)
+
+
+
+
+
+
+
+
 
 # splitting data
 
