@@ -100,12 +100,142 @@ prepare_modeling_data <-
   }
 
 
+sparse_gof_wrapper <- function(frac = 0.1){
+  c(data_train,
+    data_val,
+    data_test,
+    record_id_train,
+    record_id_val,
+    record_id_test) %<-% prepare_modeling_data(frac = frac)
+
+  # training
+  train_set <- data_memory(
+    user_index = data_train$catchment_id,
+    item_index = data_train$model_id,
+    rating = data_train$rating,
+    index1 = T
+  )
+  
+  val_set <- data_memory(
+    user_index = data_val$catchment_id,
+    item_index = data_val$model_id,
+    rating = data_val$rating,
+    index1 = T
+  )
+  
+  data_train_val <- data_train %>%
+    bind_rows(data_val)
+  train_val_set <- data_memory(
+    user_index = data_train_val$catchment_id,
+    item_index = data_train_val$model_id,
+    rating = data_train_val$rating,
+    index1 = T
+  )
+  
+  test_set <- data_memory(
+    user_index = data_test$catchment_id,
+    item_index = data_test$model_id,
+    rating = data_test$rating,
+    index1 = T
+  )
+  
+  # experiment
+  scoringFunction <- function(x){
+    
+    dim <- x["dim"] %>% unlist()
+    lrate <- x["lrate"] %>% unlist()
+    niter <- x["niter"] %>% unlist()
+    
+    costp_l1 <- x["costp_l1"] %>% unlist()
+    costp_l2 <- x["costp_l2"] %>% unlist()
+    costq_l1 <- x["costq_l1"] %>% unlist()
+    costq_l2 <- x["costq_l2"] %>% unlist()
+    
+    r = Reco()
+    
+    r$train(train_set,
+            opts = list(
+              dim = dim,
+              costp_l1 = costp_l1,
+              costp_l2 = costp_l2,
+              costq_l1 = costq_l1,
+              costq_l2 = costq_l2,
+              lrate = lrate,
+              niter = niter,
+              verbose = F,
+              nthread = nthread
+            ))
+    
+    pred_rvec <- r$predict(val_set)
+    r2 <- cor(data_val$rating, pred_rvec)^2
+    
+    score <- r2
+    return(score)
+  }
+  
+  obj_fun <- makeSingleObjectiveFunction(
+    fn = scoringFunction,
+    par.set = makeParamSet(
+      makeIntegerParam("dim", lower= 1, upper = 200),
+      makeNumericParam("lrate",  lower= 1e-04,   upper = 0.2),
+      makeIntegerParam("niter", lower = 5,  upper = 1000),
+      makeNumericParam("costp_l1",  lower= 0,   upper = 0.1),
+      makeNumericParam("costp_l2",  lower= 0,   upper = 0.1),
+      makeNumericParam("costq_l1",  lower= 0,   upper = 0.1),
+      makeNumericParam("costq_l2",  lower= 0,   upper = 0.1)
+    ),
+    has.simple.signature = FALSE,
+    minimize = FALSE
+  )
+  
+  des <- generateDesign(
+    n = 5 * getNumberOfParameters(obj_fun),
+    par.set = getParamSet(obj_fun),
+    fun = lhs::randomLHS
+  )
+  
+  des$y = apply(des, 1, obj_fun)
+  
+  control <- makeMBOControl() %>%
+    setMBOControlTermination(., iters = 100 - 5 * getNumberOfParameters(obj_fun))
+  
+  run <- mbo(
+    fun = obj_fun,
+    design = des,
+    control = control,
+    show.info = TRUE
+  )
+  
+  r = Reco()
+  
+  r$train(train_val_set, opts = run$x)
+  pred_rvec <- r$predict(test_set)
+  r2 <- cor(data_test$rating, pred_rvec)^2
+  r2
+}
+
+
+test1 <- sparse_gof_wrapper(0.01)
+test2 <- sparse_gof_wrapper(0.02)
+test5 <- sparse_gof_wrapper(0.05)
+
+
+
+
+
+
+
+
+
+
+
+# recycle -----------------------------------------------------------------
 c(data_train,
   data_val,
   data_test,
   record_id_train,
   record_id_val,
-  record_id_test) %<-% prepare_modeling_data()
+  record_id_test) %<-% prepare_modeling_data(frac = frac)
 
 
 # training
@@ -150,7 +280,7 @@ scoringFunction <- function(x){
   costp_l2 <- x["costp_l2"] %>% unlist()
   costq_l1 <- x["costq_l1"] %>% unlist()
   costq_l2 <- x["costq_l2"] %>% unlist()
-
+  
   r = Reco()
   
   r$train(train_set,
@@ -197,7 +327,7 @@ des <- generateDesign(
 des$y = apply(des, 1, obj_fun)
 
 control <- makeMBOControl() %>%
-  setMBOControlTermination(., iters = 60 - 5 * getNumberOfParameters(obj_fun))
+  setMBOControlTermination(., iters = 100 - 5 * getNumberOfParameters(obj_fun))
 
 run <- mbo(
   fun = obj_fun,
@@ -212,20 +342,6 @@ r$train(train_val_set, opts = run$x)
 pred_rvec <- r$predict(test_set)
 r2 <- cor(data_test$rating, pred_rvec)^2
 r2
-
-
-
-
-
-
-
-
-
-
-
-
-
-# recycle -----------------------------------------------------------------
 
 
 pred_rvec <- r$predict(test_set)
