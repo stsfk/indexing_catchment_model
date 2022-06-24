@@ -14,7 +14,7 @@ pacman::p_load(tidyverse,
 
 # seed --------------------------------------------------------------------
 
-set.seed(1234)
+#set.seed(1234)
 nthread <- 10 # number of CPU thread
 
 # data --------------------------------------------------------------------
@@ -61,70 +61,81 @@ data_process <- data_raw %>%
 
 # Experiments -------------------------------------------------------------
 
-frac <- 0.1
-train_portion <- 0.6
-val_portion <- 0.2
-test_portion <- 0.2
+prepare_modeling_data <-
+  function(frac = 0.1,
+           train_portion = 0.6,
+           val_portion = 0.2,
+           test_portion = 0.2) {
+    
+    
+    data_sample <- data_process %>%
+      group_by(model_id) %>% 
+      sample_frac(frac) %>%
+      ungroup()
+    
+    data_train_val <- data_sample %>%
+      group_by(model_id) %>% 
+      sample_frac(train_portion + val_portion) %>%
+      ungroup()
+    
+    data_train <- data_train_val %>%
+      group_by(model_id) %>% 
+      sample_frac(train_portion/(val_portion+train_portion)) %>%
+      ungroup()
+    
+    data_val <- data_train_val %>%
+      filter(record_id %in% setdiff(data_train_val$record_id, data_train$record_id))
+    
+    data_test <- data_sample %>%
+      filter(record_id %in% setdiff(data_sample$record_id, data_train_val$record_id))
+    
+    list(
+      data_train = data_train %>% select(-record_id),
+      data_val = data_val %>% select(-record_id),
+      data_test = data_test %>% select(-record_id),
+      record_id_train = data_train$record_id,
+      record_id_val = data_val$record_id,
+      record_id_test = data_test$record_id
+    )
+  }
 
-data_sample <- data_process %>%
-  group_by(model_id) %>% 
-  sample_frac(frac) %>%
-  ungroup()
 
-data_train_val <- data_sample %>%
-  group_by(model_id) %>% 
-  sample_frac(train_portion + val_portion) %>%
-  ungroup()
+c(data_train,
+  data_val,
+  data_test,
+  record_id_train,
+  record_id_val,
+  record_id_test) %<-% prepare_modeling_data()
 
-data_train <- data_train_val %>%
-  group_by(model_id) %>% 
-  sample_frac(train_portion/(val_portion+train_portion)) %>%
-  ungroup()
 
-data_val <- data_train_val %>%
-  filter(record_id %in% setdiff(data_train_val$record_id, data_train$record_id))
-
-data_test <- data_sample %>%
-  filter(record_id %in% setdiff(data_sample$record_id, data_train_val$record_id))
-
-list(
-  data_train = data_train %>% select(-record_id),
-  data_val = data_val %>% select(-record_id),
-  data_test = data_test %>% select(-record_id),
-  record_id_train = data_train$record_id,
-  record_id_val = data_val$record_id,
-  record_id_test = data_test$record_id
+# training
+train_set <- data_memory(
+  user_index = data_train$catchment_id,
+  item_index = data_train$model_id,
+  rating = data_train$rating,
+  index1 = T
 )
 
+val_set <- data_memory(
+  user_index = data_val$catchment_id,
+  item_index = data_val$model_id,
+  rating = data_val$rating,
+  index1 = T
+)
 
-
-
-
-
-
-
-
-
-
-# splitting data
-
-data_split <- initial_split(data_process, prop = 4/5, strata = NULL)
-
-dtrain <- analysis(data_split)
-dtest <- assessment(data_split)
-
-# get training and test fold
-training_set <- data_memory(
-  user_index = dtrain$catchment_id,
-  item_index = dtrain$model_id,
-  rating = dtrain$rating,
+data_train_val <- data_train %>%
+  bind_rows(data_val)
+train_val_set <- data_memory(
+  user_index = data_train_val$catchment_id,
+  item_index = data_train_val$model_id,
+  rating = data_train_val$rating,
   index1 = T
 )
 
 test_set <- data_memory(
-  user_index = dtest$catchment_id,
-  item_index = dtest$model_id,
-  rating = dtest$rating,
+  user_index = data_test$catchment_id,
+  item_index = data_test$model_id,
+  rating = data_test$rating,
   index1 = T
 )
 
@@ -139,42 +150,46 @@ scoringFunction <- function(x){
   costp_l2 <- x["costp_l2"] %>% unlist()
   costq_l1 <- x["costq_l1"] %>% unlist()
   costq_l2 <- x["costq_l2"] %>% unlist()
-  
-  dim <- 5 * dim
-  lrate <- 10^lrate
-  niter <- 10 * niter
-  
+
   r = Reco()
   
-  r$train(training_set, opts = c(opts$min, nthread = nthread, niter = niter, verbose = F))
+  r$train(train_set,
+          opts = list(
+            dim = dim,
+            costp_l1 = costp_l1,
+            costp_l2 = costp_l2,
+            costq_l1 = costq_l1,
+            costq_l2 = costq_l2,
+            lrate = lrate,
+            niter = niter,
+            verbose = F,
+            nthread = nthread
+          ))
   
-  pred_rvec <- r$predict(test_set)
-  r2 <- cor(dtest$rating, pred_rvec)^2
+  pred_rvec <- r$predict(val_set)
+  r2 <- cor(data_val$rating, pred_rvec)^2
   
   score <- r2
   return(score)
-} 
-
-
-
+}
 
 obj_fun <- makeSingleObjectiveFunction(
   fn = scoringFunction,
   par.set = makeParamSet(
-    makeIntegerParam("dim", lower= 1, upper = 20),
-    makeNumericParam("lrate",  lower= -4,   upper = -0.5),
-    makeIntegerParam("niter", lower = 1,  upper = 20),
-    makeNumericParam("costp_l1",  lower= 0,   upper = 1),
-    makeNumericParam("costp_l2",  lower= 0,   upper = 1),
-    makeNumericParam("costq_l1",  lower= 0,   upper = 1),
-    makeNumericParam("costq_l2",  lower= 0,   upper = 1)
+    makeIntegerParam("dim", lower= 1, upper = 200),
+    makeNumericParam("lrate",  lower= 1e-04,   upper = 0.2),
+    makeIntegerParam("niter", lower = 5,  upper = 1000),
+    makeNumericParam("costp_l1",  lower= 0,   upper = 0.1),
+    makeNumericParam("costp_l2",  lower= 0,   upper = 0.1),
+    makeNumericParam("costq_l1",  lower= 0,   upper = 0.1),
+    makeNumericParam("costq_l2",  lower= 0,   upper = 0.1)
   ),
   has.simple.signature = FALSE,
   minimize = FALSE
 )
 
-des = generateDesign(
-  n = 4 * getNumberOfParameters(obj_fun),
+des <- generateDesign(
+  n = 5 * getNumberOfParameters(obj_fun),
   par.set = getParamSet(obj_fun),
   fun = lhs::randomLHS
 )
@@ -182,7 +197,7 @@ des = generateDesign(
 des$y = apply(des, 1, obj_fun)
 
 control <- makeMBOControl() %>%
-  setMBOControlTermination(., iters = 100 - 4 * getNumberOfParameters(obj_fun))
+  setMBOControlTermination(., iters = 60 - 5 * getNumberOfParameters(obj_fun))
 
 run <- mbo(
   fun = obj_fun,
@@ -191,35 +206,28 @@ run <- mbo(
   show.info = TRUE
 )
 
-run$best.ind
-run$y
-
-plot(run)
-
-
-
-
-
-
-# recycle
-
-
-# construct recommender model
 r = Reco()
 
-opts = r$tune(training_set,
-              opts = list(
-                dim = c(5, 10,20,50), #c(1:25) * 2,
-                lrate = c(0.001, 0.005, 0.1, 0.2),
-                nthread = 10,
-                niter = 30,
-                verbose = T
-              ))
+r$train(train_val_set, opts = run$x)
+pred_rvec <- r$predict(test_set)
+r2 <- cor(data_test$rating, pred_rvec)^2
+r2
 
-r$train(training_set, opts = c(opts$min, nthread = nthread, niter = 1000))
-c(P, Q) %<-% r$output(out_memory(), out_memory())
 
-# Postprocessing ----------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+# recycle -----------------------------------------------------------------
+
+
 pred_rvec <- r$predict(test_set)
 cor(dtest$rating, pred_rvec)^2
 
