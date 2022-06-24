@@ -9,8 +9,7 @@ pacman::p_load(tidyverse,
                hydroGOF,
                caret,
                tidymodels,
-               mlrMBO
-               )
+               mlrMBO)
 
 # seed --------------------------------------------------------------------
 
@@ -19,7 +18,7 @@ nthread <- 10 # number of CPU thread
 
 # data --------------------------------------------------------------------
 
-similarity_m <- read_csv("./data/SM.csv",
+weights <- read_csv("./data/SM.csv",
                          col_names = c("KGE", "NSE", "RMSE"))
 
 model_class  <- c(
@@ -37,13 +36,13 @@ model_class  <- c(
 
 n_catchments <- 533
 n_model_classes <- length(model_class)
-n_model_instances <-  nrow(similarity_m)/n_catchments/n_model_classes # number of instance of each model class
+n_model_instances <-  nrow(weights)/n_catchments/n_model_classes # number of instance of each model class
 
 catchment_id <- rep(1:n_catchments, each = n_model_instances)
-data_raw <- similarity_m %>%
+data_raw <- weights %>%
   bind_cols(expand_grid(model_class, catchment_id)) %>%
   mutate(
-    instance_id = rep(1:n_model_instances, n()/n_model_instances),
+    instance_id = rep(1:n_model_instances, n() / n_model_instances),
     model_id = paste(model_class, instance_id, sep = "_"),
     model_id = factor(model_id, levels = unique(model_id)),
     model_id = as.integer(model_id) # assign a unique id to each model
@@ -66,21 +65,19 @@ prepare_modeling_data <-
            train_portion = 0.6,
            val_portion = 0.2,
            test_portion = 0.2) {
-    
-    
     data_sample <- data_process %>%
-      group_by(model_id) %>% 
+      group_by(model_id) %>%
       sample_frac(frac) %>%
       ungroup()
     
     data_train_val <- data_sample %>%
-      group_by(model_id) %>% 
+      group_by(model_id) %>%
       sample_frac(train_portion + val_portion) %>%
       ungroup()
     
     data_train <- data_train_val %>%
-      group_by(model_id) %>% 
-      sample_frac(train_portion/(val_portion+train_portion)) %>%
+      group_by(model_id) %>%
+      sample_frac(train_portion / (val_portion + train_portion)) %>%
       ungroup()
     
     data_val <- data_train_val %>%
@@ -100,14 +97,14 @@ prepare_modeling_data <-
   }
 
 
-sparse_gof_wrapper <- function(frac = 0.1){
+sparse_gof_wrapper <- function(frac = 0.1) {
   c(data_train,
     data_val,
     data_test,
     record_id_train,
     record_id_val,
     record_id_test) %<-% prepare_modeling_data(frac = frac)
-
+  
   # training
   train_set <- data_memory(
     user_index = data_train$catchment_id,
@@ -140,8 +137,7 @@ sparse_gof_wrapper <- function(frac = 0.1){
   )
   
   # experiment
-  scoringFunction <- function(x){
-    
+  scoringFunction <- function(x) {
     dim <- x["dim"] %>% unlist()
     lrate <- x["lrate"] %>% unlist()
     niter <- x["niter"] %>% unlist()
@@ -153,21 +149,23 @@ sparse_gof_wrapper <- function(frac = 0.1){
     
     r = Reco()
     
-    r$train(train_set,
-            opts = list(
-              dim = dim,
-              costp_l1 = costp_l1,
-              costp_l2 = costp_l2,
-              costq_l1 = costq_l1,
-              costq_l2 = costq_l2,
-              lrate = lrate,
-              niter = niter,
-              verbose = F,
-              nthread = nthread
-            ))
+    r$train(
+      train_set,
+      opts = list(
+        dim = dim,
+        costp_l1 = costp_l1,
+        costp_l2 = costp_l2,
+        costq_l1 = costq_l1,
+        costq_l2 = costq_l2,
+        lrate = lrate,
+        niter = niter,
+        verbose = F,
+        nthread = nthread
+      )
+    )
     
     pred_rvec <- r$predict(val_set)
-    r2 <- cor(data_val$rating, pred_rvec)^2
+    r2 <- cor(data_val$rating, pred_rvec) ^ 2
     
     score <- r2
     return(score)
@@ -176,13 +174,13 @@ sparse_gof_wrapper <- function(frac = 0.1){
   obj_fun <- makeSingleObjectiveFunction(
     fn = scoringFunction,
     par.set = makeParamSet(
-      makeIntegerParam("dim", lower= 1, upper = 200),
-      makeNumericParam("lrate",  lower= 1e-04,   upper = 0.2),
+      makeIntegerParam("dim", lower = 1, upper = 200),
+      makeNumericParam("lrate",  lower = 1e-04,   upper = 0.2),
       makeIntegerParam("niter", lower = 5,  upper = 1000),
-      makeNumericParam("costp_l1",  lower= 0,   upper = 0.1),
-      makeNumericParam("costp_l2",  lower= 0,   upper = 0.1),
-      makeNumericParam("costq_l1",  lower= 0,   upper = 0.1),
-      makeNumericParam("costq_l2",  lower= 0,   upper = 0.1)
+      makeNumericParam("costp_l1",  lower = 0,   upper = 0.1),
+      makeNumericParam("costp_l2",  lower = 0,   upper = 0.1),
+      makeNumericParam("costq_l1",  lower = 0,   upper = 0.1),
+      makeNumericParam("costq_l2",  lower = 0,   upper = 0.1)
     ),
     has.simple.signature = FALSE,
     minimize = FALSE
@@ -207,153 +205,42 @@ sparse_gof_wrapper <- function(frac = 0.1){
   )
   
   r = Reco()
-  
-  r$train(train_val_set, opts = run$x)
+
+  opts <- run$x
+  opts$nthread <- nthread
+  opts$verbose <- F
+  r$train(train_val_set, opts = opts)
   pred_rvec <- r$predict(test_set)
-  r2 <- cor(data_test$rating, pred_rvec)^2
-  r2
+  r2 <- cor(data_test$rating, pred_rvec) ^ 2
+  
+  c(P,Q) %<-% r$output(out_memory(), out_memory())
+  
+  out <- list(
+    r2 = r2,
+    run = run,
+    des = des,
+    P = P,
+    Q = Q,
+    record_id_train = record_id_train,
+    record_id_val = record_id_val,
+    record_id_test = record_id_test
+  )
 }
 
+eval_grid <- tibble(
+  ratio = c(0.01, 0.02, 0.03, 0.04, 0.05),
+  r2 = 0,
+  out = vector("list",1)
+)
 
-test1 <- sparse_gof_wrapper(0.01)
-test2 <- sparse_gof_wrapper(0.02)
-test5 <- sparse_gof_wrapper(0.05)
-
-
-
-
-
-
-
-
+for (i in 1:nrow(eval_grid)){
+  frac <- eval_grid$ratio[i]
+  eval_grid$out[[i]] <- sparse_gof_wrapper(frac)
+  eval_grid$r2[[i]] <- eval_grid$out[[i]]$r2
+  
+  gc()
+}
 
 
 
 # recycle -----------------------------------------------------------------
-c(data_train,
-  data_val,
-  data_test,
-  record_id_train,
-  record_id_val,
-  record_id_test) %<-% prepare_modeling_data(frac = frac)
-
-
-# training
-train_set <- data_memory(
-  user_index = data_train$catchment_id,
-  item_index = data_train$model_id,
-  rating = data_train$rating,
-  index1 = T
-)
-
-val_set <- data_memory(
-  user_index = data_val$catchment_id,
-  item_index = data_val$model_id,
-  rating = data_val$rating,
-  index1 = T
-)
-
-data_train_val <- data_train %>%
-  bind_rows(data_val)
-train_val_set <- data_memory(
-  user_index = data_train_val$catchment_id,
-  item_index = data_train_val$model_id,
-  rating = data_train_val$rating,
-  index1 = T
-)
-
-test_set <- data_memory(
-  user_index = data_test$catchment_id,
-  item_index = data_test$model_id,
-  rating = data_test$rating,
-  index1 = T
-)
-
-# experiment
-scoringFunction <- function(x){
-  
-  dim <- x["dim"] %>% unlist()
-  lrate <- x["lrate"] %>% unlist()
-  niter <- x["niter"] %>% unlist()
-  
-  costp_l1 <- x["costp_l1"] %>% unlist()
-  costp_l2 <- x["costp_l2"] %>% unlist()
-  costq_l1 <- x["costq_l1"] %>% unlist()
-  costq_l2 <- x["costq_l2"] %>% unlist()
-  
-  r = Reco()
-  
-  r$train(train_set,
-          opts = list(
-            dim = dim,
-            costp_l1 = costp_l1,
-            costp_l2 = costp_l2,
-            costq_l1 = costq_l1,
-            costq_l2 = costq_l2,
-            lrate = lrate,
-            niter = niter,
-            verbose = F,
-            nthread = nthread
-          ))
-  
-  pred_rvec <- r$predict(val_set)
-  r2 <- cor(data_val$rating, pred_rvec)^2
-  
-  score <- r2
-  return(score)
-}
-
-obj_fun <- makeSingleObjectiveFunction(
-  fn = scoringFunction,
-  par.set = makeParamSet(
-    makeIntegerParam("dim", lower= 1, upper = 200),
-    makeNumericParam("lrate",  lower= 1e-04,   upper = 0.2),
-    makeIntegerParam("niter", lower = 5,  upper = 1000),
-    makeNumericParam("costp_l1",  lower= 0,   upper = 0.1),
-    makeNumericParam("costp_l2",  lower= 0,   upper = 0.1),
-    makeNumericParam("costq_l1",  lower= 0,   upper = 0.1),
-    makeNumericParam("costq_l2",  lower= 0,   upper = 0.1)
-  ),
-  has.simple.signature = FALSE,
-  minimize = FALSE
-)
-
-des <- generateDesign(
-  n = 5 * getNumberOfParameters(obj_fun),
-  par.set = getParamSet(obj_fun),
-  fun = lhs::randomLHS
-)
-
-des$y = apply(des, 1, obj_fun)
-
-control <- makeMBOControl() %>%
-  setMBOControlTermination(., iters = 100 - 5 * getNumberOfParameters(obj_fun))
-
-run <- mbo(
-  fun = obj_fun,
-  design = des,
-  control = control,
-  show.info = TRUE
-)
-
-r = Reco()
-
-r$train(train_val_set, opts = run$x)
-pred_rvec <- r$predict(test_set)
-r2 <- cor(data_test$rating, pred_rvec)^2
-r2
-
-
-pred_rvec <- r$predict(test_set)
-cor(dtest$rating, pred_rvec)^2
-
-# retrieve data and model)
-
-# predicting test set
-pred_rvec <- r$predict(test_set)
-
-# goodness-of-fit
-rmse <- ModelMetrics::rmse(actual = dtest$rating, predicted = pred_rvec)
-r2 <- cor(dtest$rating, pred_rvec)^2
-mae <- hydroGOF::mae(sim = pred_rvec, obs = dtest$rating)
-
