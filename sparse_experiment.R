@@ -14,7 +14,7 @@ pacman::p_load(tidyverse,
 # seed --------------------------------------------------------------------
 
 #set.seed(1234)
-nthread <- 10 # number of CPU thread
+nthread <- 14 # number of CPU thread
 
 # data --------------------------------------------------------------------
 
@@ -164,11 +164,11 @@ sparse_gof_wrapper <- function(frac = 0.1) {
       )
     )
     
-    pred_rvec <- r$predict(val_set)
-    r2 <- cor(data_val$rating, pred_rvec) ^ 2
+    rmse <-
+      ModelMetrics::rmse(actual = data_val$rating,
+           predicted = r$predict(val_set))
     
-    score <- r2
-    return(score)
+    return(rmse)
   }
   
   obj_fun <- makeSingleObjectiveFunction(
@@ -183,7 +183,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
       makeNumericParam("costq_l2",  lower = 0,   upper = 0.1)
     ),
     has.simple.signature = FALSE,
-    minimize = FALSE
+    minimize = TRUE
   )
   
   des <- generateDesign(
@@ -212,11 +212,14 @@ sparse_gof_wrapper <- function(frac = 0.1) {
   r$train(train_val_set, opts = opts)
   pred_rvec <- r$predict(test_set)
   r2 <- cor(data_test$rating, pred_rvec) ^ 2
+  rmse <- ModelMetrics::rmse(actual = data_test$rating,
+                       predicted = pred_rvec)
   
   c(P,Q) %<-% r$output(out_memory(), out_memory())
   
   out <- list(
     r2 = r2,
+    rmse = rmse,
     run = run,
     des = des,
     P = P,
@@ -227,20 +230,29 @@ sparse_gof_wrapper <- function(frac = 0.1) {
   )
 }
 
-eval_grid <- tibble(
-  ratio = c(0.01, 0.02, 0.03, 0.04, 0.05),
+eval_grid <- expand_grid(
+  ratio = c(0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.2, 0.5, 0.8, 1),
   r2 = 0,
-  out = vector("list",1)
+  rmse = 0,
+  out = vector("list",1),
+  repeats = c(1)
 )
+
+sta_time <- Sys.time()
 
 for (i in 1:nrow(eval_grid)){
   frac <- eval_grid$ratio[i]
   eval_grid$out[[i]] <- sparse_gof_wrapper(frac)
   eval_grid$r2[[i]] <- eval_grid$out[[i]]$r2
+  eval_grid$rmse[[i]] <- eval_grid$out[[i]]$rmse
   
   gc()
 }
 
+end_time <- Sys.time()
 
+end_time - sta_time
+
+save(eval_grid, file = "sparse_exp.Rda")
 
 # recycle -----------------------------------------------------------------
