@@ -19,7 +19,7 @@ nthread <- 14 # number of CPU thread
 # data --------------------------------------------------------------------
 
 weights <- read_csv("./data/SM.csv",
-                         col_names = c("KGE", "NSE", "RMSE"))
+                    col_names = c("KGE", "NSE", "RMSE"))
 
 model_class  <- c(
   'm_01_collie1_1p_1s',
@@ -58,7 +58,24 @@ data_process <- data_raw %>%
   mutate(record_id = 1:n())
 
 
+# keep 500 catchments
+catchment_id_building <- sample(1:n_catchments, 500) %>% sort()
+catchment_id_lookup <- setdiff(1:n_catchments, catchment_id_building)
+
+data_process_building <- data_process %>%
+  filter(record_id %in% catchment_id_building)
+
+data_process_building <- data_process %>%
+  filter(record_id %in% catchment_id_lookup)
+
+
 # Experiments -------------------------------------------------------------
+
+train_portion = 0.6
+val_portion = 0.2
+test_portion = 0.2
+
+
 
 prepare_modeling_data <-
   function(frac = 0.1,
@@ -166,7 +183,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
     
     rmse <-
       ModelMetrics::rmse(actual = data_val$rating,
-           predicted = r$predict(val_set))
+                         predicted = r$predict(val_set))
     
     return(rmse)
   }
@@ -205,7 +222,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
   )
   
   r = Reco()
-
+  
   opts <- run$x
   opts$nthread <- nthread
   opts$verbose <- F
@@ -213,7 +230,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
   pred_rvec <- r$predict(test_set)
   r2 <- cor(data_test$rating, pred_rvec) ^ 2
   rmse <- ModelMetrics::rmse(actual = data_test$rating,
-                       predicted = pred_rvec)
+                             predicted = pred_rvec)
   
   c(P,Q) %<-% r$output(out_memory(), out_memory())
   
