@@ -13,7 +13,8 @@ pacman::p_load(tidyverse,
                DiceKriging,
                rgenoud,
                GA,
-               ModelMetrics)
+               ModelMetrics,
+               doParallel)
 
 # seed --------------------------------------------------------------------
 
@@ -159,7 +160,7 @@ obj_fun <- makeSingleObjectiveFunction(
 )
 
 des <- generateDesign(
-  n = 5 * getNumberOfParameters(obj_fun),
+  n = 3 * getNumberOfParameters(obj_fun),
   par.set = getParamSet(obj_fun),
   fun = lhs::randomLHS
 )
@@ -167,7 +168,7 @@ des <- generateDesign(
 des$y = apply(des, 1, obj_fun)
 
 control <- makeMBOControl() %>%
-  setMBOControlTermination(., iters = 40 - 5 * getNumberOfParameters(obj_fun))
+  setMBOControlTermination(., iters = 30 - 4 * getNumberOfParameters(obj_fun))
 
 run <- mbo(
   fun = obj_fun,
@@ -186,276 +187,86 @@ r$train(train_val_set, opts = opts)
 c(P,Q) %<-% r$output(out_memory(), out_memory())
 
 
+# Estimating latent variable of new users ---------------------------------
+
+n_evaluation <- 200
 
 i <- 1
-j <- 4023
+model_ind_evaluation <- sample(1:(n_model_instances*n_model_classes), n_evaluation) %>%
+  sort()
+model_ind_test <- setdiff(1:(n_model_instances*n_model_classes), model_ind_evaluation)
 
-retrieve_from_model <- function(i, j){
-  P[i,] %*% Q[j,] %>% as.vector()
-}
-n_evaluated <- 1000
-js <- sample(1:(n_model_instances*n_model_classes), n_evaluated)
-
-build_lm_data_set <- function(i, js){
-  
-  ratings <- data_process %>%
-    filter(catchment_id == i,
-           model_id %in% js) %>%
-    pull(rating)
-  
-  Q[js,] %>%
-    as.data.frame() %>%
-    mutate(rating = ratings) %>%
-    as_tibble()
-}
-
-data_lm <- build_lm_data_set(i, js)
-
-model <- lm(rating ~ . - 1, data = data_lm)
-preds <- predict(model, data_lm)
-
-plot(preds, data_lm$rating)
-
-
-
-js <- sample(1:(n_model_instances*n_model_classes), 100) %>% sort()
-ratings <- data_process %>%
-  filter(catchment_id == i,
-         model_id %in% js) %>%
-  pull(rating)
-
-js <- sort(js)
-
-i <- catchment_id_lookup[[2]]
-ratings <- data_process %>%
-  filter(catchment_id == i,
-         model_id %in% js) %>%
+Q_evaluation <- Q[model_ind_evaluation,]
+rating_evaluation <- data_process_lookup %>%
+  filter(catchment_id == catchment_id_lookup[i],
+         model_id %in% model_ind_evaluation) %>%
+  arrange(model_id) %>%
   pull(rating)
 
 fn <- function(x){
   
   m1 <- matrix(x, nrow = 1)
-  m2 <- t(Q[js,])
+  m2 <- t(Q_evaluation)
   
   pred <- m1%*%m2 %>%
     as.vector()
   
-  -ModelMetrics::rmse(actual = ratings, predicted = pred)
+  -ModelMetrics::rmse(actual = rating_evaluation, predicted = pred)
 }
 
-GA <- ga(type = "real-valued", fitness = fn, lower = rep(-1, 43), upper = rep(1, 43), maxiter = 2000)
+LB <- rep(range(P,na.rm = T)[1]*1.25, dim(P)[2])
+UB <- rep(range(P,na.rm = T)[2]*1.25, dim(P)[2])
 
+GA <- ga(type = "real-valued", fitness = fn, lower = LB, upper = UB, maxiter = 5000)
 
-pred <- GA@solution %*%
-  t(Q[js,]) %>%
+P_new_catchment <- GA@solution
+pred <-P_new_catchment %*%
+  t(Q_evaluation) %>%
   as.vector()
-actual = ratings
+ModelMetrics::rmse(actual = rating_evaluation, pred)
+cor(rating_evaluation, pred)^2
+plot(rating_evaluation, pred)
 
-ModelMetrics::rmse(actual, pred)
-plot(actual, pred)
-
-
-js <- sample(1:(n_model_instances*n_model_classes), 1000) %>% sort()
-ratings <- data_process %>%
-  filter(catchment_id == i,
-         model_id %in% js) %>%
+# evaluation
+model_ind_test <- setdiff(1:(n_model_instances*n_model_classes), model_ind_evaluation) %>%
+  sort()
+Q_test<- Q[model_ind_test,]
+rating_test <- data_process_lookup %>%
+  filter(catchment_id == catchment_id_lookup[i],
+         model_id %in% model_ind_test) %>%
+  arrange(model_id) %>%
   pull(rating)
-pred <- GA@solution %*%
-  t(Q[js,]) %>%
+
+pred_test <-P_new_catchment %*%
+  t(Q_test) %>%
   as.vector()
-actual = ratings
-
-ModelMetrics::rmse(actual, pred)
-cor(actual, pred)^2
-
-plot(actual, pred)
+ModelMetrics::rmse(actual = rating_test, pred_test)
+cor(rating_test, pred_test)^2
+plot(rating_test, pred_test)
 
 
 
 
+# LM experiments ----------------------------------------------------------
+
+data_lm <- Q_evaluation %>%
+  as.data.frame() %>%
+  mutate(rating = rating_evaluation)
+
+model <- lm(rating ~ . - 1, data = data_lm)
+preds <- predict(model, data_lm)
+plot(preds, data_lm$rating)
+cor(data_lm$rating, preds)^2
 
 
+data_lm_test <- Q[model_ind_test,] %>%
+  as.data.frame() %>%
+  mutate(rating = rating_test)
+preds <- predict(model, data_lm_test)
+
+plot(preds, data_lm_test$rating)
+
+cor(data_lm_test$rating, preds)^2
+plot(data_lm_test$rating, preds)
 
 
-
-
-
-  
-  
-data_lm_all <- build_lm_data_set(i, 1:100)
-preds <- predict(model, data_lm_all)
-
-plot(preds, data_lm_all$rating)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-sparse_gof_wrapper <- function(frac = 0.1) {
-  c(data_train,
-    data_val,
-    data_test,
-    record_id_train,
-    record_id_val,
-    record_id_test) %<-% prepare_modeling_data(frac = frac)
-  
-  # training
-  train_set <- data_memory(
-    user_index = data_train$catchment_id,
-    item_index = data_train$model_id,
-    rating = data_train$rating,
-    index1 = T
-  )
-  
-  val_set <- data_memory(
-    user_index = data_val$catchment_id,
-    item_index = data_val$model_id,
-    rating = data_val$rating,
-    index1 = T
-  )
-  
-  data_train_val <- data_train %>%
-    bind_rows(data_val)
-  train_val_set <- data_memory(
-    user_index = data_train_val$catchment_id,
-    item_index = data_train_val$model_id,
-    rating = data_train_val$rating,
-    index1 = T
-  )
-  
-  test_set <- data_memory(
-    user_index = data_test$catchment_id,
-    item_index = data_test$model_id,
-    rating = data_test$rating,
-    index1 = T
-  )
-  
-  # experiment
-  scoringFunction <- function(x) {
-    dim <- x["dim"] %>% unlist()
-    lrate <- x["lrate"] %>% unlist()
-    niter <- x["niter"] %>% unlist()
-    
-    costp_l1 <- x["costp_l1"] %>% unlist()
-    costp_l2 <- x["costp_l2"] %>% unlist()
-    costq_l1 <- x["costq_l1"] %>% unlist()
-    costq_l2 <- x["costq_l2"] %>% unlist()
-    
-    r = Reco()
-    
-    r$train(
-      train_set,
-      opts = list(
-        dim = dim,
-        costp_l1 = costp_l1,
-        costp_l2 = costp_l2,
-        costq_l1 = costq_l1,
-        costq_l2 = costq_l2,
-        lrate = lrate,
-        niter = niter,
-        verbose = F,
-        nthread = nthread
-      )
-    )
-    
-    rmse <-
-      ModelMetrics::rmse(actual = data_val$rating,
-                         predicted = r$predict(val_set))
-    
-    return(rmse)
-  }
-  
-  obj_fun <- makeSingleObjectiveFunction(
-    fn = scoringFunction,
-    par.set = makeParamSet(
-      makeIntegerParam("dim", lower = 1, upper = 100),
-      makeNumericParam("lrate",  lower = 1e-04,   upper = 0.2),
-      makeIntegerParam("niter", lower = 5,  upper = 1000),
-      makeNumericParam("costp_l1",  lower = 0,   upper = 0.1),
-      makeNumericParam("costp_l2",  lower = 0,   upper = 0.1),
-      makeNumericParam("costq_l1",  lower = 0,   upper = 0.1),
-      makeNumericParam("costq_l2",  lower = 0,   upper = 0.1)
-    ),
-    has.simple.signature = FALSE,
-    minimize = TRUE
-  )
-  
-  des <- generateDesign(
-    n = 5 * getNumberOfParameters(obj_fun),
-    par.set = getParamSet(obj_fun),
-    fun = lhs::randomLHS
-  )
-  
-  des$y = apply(des, 1, obj_fun)
-  
-  control <- makeMBOControl() %>%
-    setMBOControlTermination(., iters = 100 - 5 * getNumberOfParameters(obj_fun))
-  
-  run <- mbo(
-    fun = obj_fun,
-    design = des,
-    control = control,
-    show.info = TRUE
-  )
-  
-  r = Reco()
-  
-  opts <- run$x
-  opts$nthread <- nthread
-  opts$verbose <- F
-  r$train(train_val_set, opts = opts)
-  pred_rvec <- r$predict(test_set)
-  r2 <- cor(data_test$rating, pred_rvec) ^ 2
-  rmse <- ModelMetrics::rmse(actual = data_test$rating,
-                             predicted = pred_rvec)
-  
-  c(P,Q) %<-% r$output(out_memory(), out_memory())
-  
-  out <- list(
-    r2 = r2,
-    rmse = rmse,
-    run = run,
-    des = des,
-    P = P,
-    Q = Q,
-    record_id_train = record_id_train,
-    record_id_val = record_id_val,
-    record_id_test = record_id_test
-  )
-}
-
-eval_grid <- expand_grid(
-  ratio = c(0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.2, 0.5, 0.8, 1),
-  r2 = 0,
-  rmse = 0,
-  out = vector("list",1),
-  repeats = c(1)
-)
-
-sta_time <- Sys.time()
-
-for (i in 1:nrow(eval_grid)){
-  frac <- eval_grid$ratio[i]
-  eval_grid$out[[i]] <- sparse_gof_wrapper(frac)
-  eval_grid$r2[[i]] <- eval_grid$out[[i]]$r2
-  eval_grid$rmse[[i]] <- eval_grid$out[[i]]$rmse
-  
-  gc()
-}
-
-end_time <- Sys.time()
-
-end_time - sta_time
-
-save(eval_grid, file = "sparse_exp.Rda")
-
-# recycle -----------------------------------------------------------------
