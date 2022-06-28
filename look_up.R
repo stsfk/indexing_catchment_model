@@ -189,9 +189,9 @@ c(P,Q) %<-% r$output(out_memory(), out_memory())
 
 # Estimating latent variable of new users ---------------------------------
 
-n_evaluation <- 200
+n_evaluation <- 50
 
-i <- 1
+i <- 2
 model_ind_evaluation <- sample(1:(n_model_instances*n_model_classes), n_evaluation) %>%
   sort()
 model_ind_test <- setdiff(1:(n_model_instances*n_model_classes), model_ind_evaluation)
@@ -219,13 +219,15 @@ UB <- rep(range(P,na.rm = T)[2]*1.25, dim(P)[2])
 
 GA <- ga(type = "real-valued", fitness = fn, lower = LB, upper = UB, maxiter = 5000)
 
-P_new_catchment <- GA@solution
-pred <-P_new_catchment %*%
+P_new_catchment <- GA@solution[1,]
+pred <- P_new_catchment %*%
   t(Q_evaluation) %>%
   as.vector()
 ModelMetrics::rmse(actual = rating_evaluation, pred)
 cor(rating_evaluation, pred)^2
 plot(rating_evaluation, pred)
+
+
 
 # evaluation
 model_ind_test <- setdiff(1:(n_model_instances*n_model_classes), model_ind_evaluation) %>%
