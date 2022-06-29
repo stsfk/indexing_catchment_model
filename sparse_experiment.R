@@ -9,7 +9,8 @@ pacman::p_load(tidyverse,
                hydroGOF,
                caret,
                tidymodels,
-               mlrMBO)
+               mlrMBO,
+               ggpubr)
 
 # seed --------------------------------------------------------------------
 
@@ -254,5 +255,25 @@ end_time <- Sys.time()
 end_time - sta_time
 
 save(eval_grid, file = "sparse_exp.Rda")
+
+
+# plot --------------------------------------------------------------------
+
+data_plot <- eval_grid %>%
+  select(ratio, r2, rmse) %>%
+  transmute(ratio = ratio * 100,
+         `R-squared` = r2,
+         RMSE = rmse) %>%
+  gather(item, value, -ratio) 
+
+
+ggplot(data_plot, aes(ratio, value))+
+  geom_point(color = "steelblue")+
+  geom_line()+
+  facet_wrap(~item, ncol = 1, scales = "free") +
+  scale_x_continuous(breaks = c(0:5)*20) +
+  labs(x = "Density of data set (percentage of available weights)") +
+  theme_bw()+
+  theme(axis.title.y = element_blank())
 
 # recycle -----------------------------------------------------------------
