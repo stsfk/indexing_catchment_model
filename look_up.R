@@ -189,7 +189,7 @@ c(P,Q) %<-% r$output(out_memory(), out_memory())
 
 # Estimating latent variable of new users ---------------------------------
 
-n_evaluation <- 50
+n_evaluation <- 100
 
 i <- 2
 model_ind_evaluation <- sample(1:(n_model_instances*n_model_classes), n_evaluation) %>%
@@ -228,7 +228,6 @@ cor(rating_evaluation, pred)^2
 plot(rating_evaluation, pred)
 
 
-
 # evaluation
 model_ind_test <- setdiff(1:(n_model_instances*n_model_classes), model_ind_evaluation) %>%
   sort()
@@ -245,6 +244,89 @@ pred_test <-P_new_catchment %*%
 ModelMetrics::rmse(actual = rating_test, pred_test)
 cor(rating_test, pred_test)^2
 plot(rating_test, pred_test)
+
+max(rating_test) - rating_test[which.max(pred_test)]
+
+# Plotting ----------------------------------------------------------------
+
+n_evaluation <- 200
+max_rating <- rep(0,33)
+max_rating_lookup <- rep(0,33)
+r2s <- rep(0,33)
+rmses <- rep(0,33)
+rankings <- rep(0,33)
+
+for (i in 1:33){
+  model_ind_evaluation <- sample(1:(n_model_instances*n_model_classes), n_evaluation) %>%
+    sort()
+  model_ind_test <- setdiff(1:(n_model_instances*n_model_classes), model_ind_evaluation)
+  
+  Q_evaluation <- Q[model_ind_evaluation,]
+  rating_evaluation <- data_process_lookup %>%
+    filter(catchment_id == catchment_id_lookup[i],
+           model_id %in% model_ind_evaluation) %>%
+    arrange(model_id) %>%
+    pull(rating)
+  
+  fn <- function(x){
+    
+    m1 <- matrix(x, nrow = 1)
+    m2 <- t(Q_evaluation)
+    
+    pred <- m1%*%m2 %>%
+      as.vector()
+    
+    -ModelMetrics::rmse(actual = rating_evaluation, predicted = pred)
+  }
+  
+  LB <- rep(range(P,na.rm = T)[1]*1.25, dim(P)[2])
+  UB <- rep(range(P,na.rm = T)[2]*1.25, dim(P)[2])
+  
+  GA <- ga(type = "real-valued", fitness = fn, lower = LB, upper = UB, maxiter = 200)
+  
+  P_new_catchment <- GA@solution[1,]
+  
+  # evaluation
+  model_ind_test <- setdiff(1:(n_model_instances*n_model_classes), model_ind_evaluation) %>%
+    sort()
+  Q_test<- Q[model_ind_test,]
+  rating_test <- data_process_lookup %>%
+    filter(catchment_id == catchment_id_lookup[i],
+           model_id %in% model_ind_test) %>%
+    arrange(model_id) %>%
+    pull(rating)
+  
+  pred_test <-P_new_catchment %*%
+    t(Q_test) %>%
+    as.vector()
+  rmses[[i]] <- ModelMetrics::rmse(actual = rating_test, pred_test)
+  r2s[[i]] <- cor(rating_test, pred_test)^2
+  #plot(rating_test, pred_test)
+  
+  max_rating[[i]] <- max(rating_test)
+  max_rating_lookup[[i]] <- rating_test[which.max(pred_test)]
+  rankings[[i]] <- rank(rating_test)[which.max(pred_test)]/length(rating_test)
+}
+
+plot(max_rating_lookup, max_rating)
+hist(max_rating_lookup - max_rating)
+sum(max_rating_lookup - max_rating)
+
+data_plot <- tibble(
+  max_rating,
+  max_rating_lookup,
+  rankings
+)
+
+ggplot(data_plot, aes(max_rating_lookup, max_rating)) +
+  geom_point()+
+  theme_bw()+
+  labs(x = "Rating of the model retrived using catchment embeddings",
+       y = "Rating of the best model in the data set")
+
+ggplot(data_plot, aes(rankings * 100))+
+  geom_histogram()+
+  theme_bw()
 
 
 
