@@ -274,7 +274,6 @@ eval_grid <- expand_grid(
   repeats = c(1)
 )
 
-sta_time <- Sys.time()
 
 for (i in 1:nrow(eval_grid)){
   frac <- eval_grid$ratio[i]
@@ -285,12 +284,38 @@ for (i in 1:nrow(eval_grid)){
   gc()
 }
 
-end_time <- Sys.time()
-
-end_time - sta_time
 
 save(eval_grid, file = "sparse_exp.Rda")
 
+
+
+
+predict_score <- function(i){
+  # i: catchment id
+  
+  tibble(
+    catchment_id = i,
+    model_id = 1:nrow(Q),
+    pred = P[i,] %*% t(Q) %>% as.vector())
+}
+
+predict_scores <- vector("list", n_catchments)
+for (i in 1:n_catchments){
+  predict_scores[[i]] <- predict_score(i)
+}
+
+predict_scores <- bind_rows(predict_scores)
+
+data_plot <- predict_scores %>%
+  group_by(catchment_id) %>%
+  summarise(best = max(pred))
+
+data_plot <- data_plot %>%
+  mutate(nse = (2*best-10)/best)
+
+data_plot$nse %>% hist()
+
+data_plot$nse %>% mean()
 
 # plot --------------------------------------------------------------------
 
