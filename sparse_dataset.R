@@ -9,13 +9,12 @@ pacman::p_load(tidyverse,
                hydroGOF,
                caret,
                tidymodels,
-               mlrMBO,
-               ggpubr)
+               mlrMBO)
 
 # seed --------------------------------------------------------------------
 
 #set.seed(1234)
-nthread <- 14 # number of CPU thread
+nthread <- 10 # number of CPU thread
 
 model_classes  <- c(
   'm_01_collie1_1p_1s',

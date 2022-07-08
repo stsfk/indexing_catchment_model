@@ -15,12 +15,12 @@ pacman::p_load(tidyverse,
 # seed --------------------------------------------------------------------
 
 #set.seed(1234)
-nthread <- 14 # number of CPU thread
+nthread <- 10 # number of CPU thread
 
 # data --------------------------------------------------------------------
 
 weights <- read_csv("./data/SM.csv",
-                         col_names = c("KGE", "NSE", "RMSE"))
+                    col_names = c("KGE", "NSE", "RMSE"))
 
 model_class  <- c(
   'm_01_collie1_1p_1s',
@@ -167,7 +167,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
     
     rmse <-
       ModelMetrics::rmse(actual = data_val$rating,
-           predicted = r$predict(val_set))
+                         predicted = r$predict(val_set))
     
     return(rmse)
   }
@@ -206,7 +206,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
   )
   
   r = Reco()
-
+  
   opts <- run$x
   opts$nthread <- nthread
   opts$verbose <- F
@@ -214,7 +214,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
   pred_rvec <- r$predict(test_set)
   r2 <- cor(data_test$rating, pred_rvec) ^ 2
   rmse <- ModelMetrics::rmse(actual = data_test$rating,
-                       predicted = pred_rvec)
+                             predicted = pred_rvec)
   
   c(P,Q) %<-% r$output(out_memory(), out_memory())
   
@@ -232,11 +232,11 @@ sparse_gof_wrapper <- function(frac = 0.1) {
 }
 
 eval_grid <- expand_grid(
-  ratio = c(0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.2, 0.5, 0.8, 1),
+  ratio = c(0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.2, 0.4, 0.8, 1),
   r2 = 0,
   rmse = 0,
   out = vector("list",1),
-  repeats = c(1)
+  repeats = c(1:10)
 )
 
 sta_time <- Sys.time()
@@ -255,6 +255,7 @@ end_time <- Sys.time()
 end_time - sta_time
 
 save(eval_grid, file = "sparse_exp.Rda")
+
 
 
 # plot --------------------------------------------------------------------
