@@ -6,6 +6,7 @@ pacman::p_load(tidyverse,
                lubridate,
                zeallot,
                recosystem,
+               vegan,
                hydroGOF,
                caret,
                tidymodels,
@@ -32,7 +33,72 @@ camels_topo <-
   filter(gauge_id %in% catchment_ids)%>%
   select(gauge_id, gauge_lat, gauge_lon)
 
-# process -----------------------------------------------------------------
+
+# NMDS neighbor -----------------------------------------------------------
+
+load("./data/dist_m.Rda")
+
+data_process<- tibble(
+  catchment = 1:533,
+  n_neighbor = apply(dist_m, 1, function(x) which(rank(x)==2))
+)
+
+camels_topo <- camels_topo %>%
+  mutate(catchment_id = 1:n())
+
+df <- tibble(
+  id = 1:nrow(data_process),
+  lon1 = 0,
+  lat1= 0,
+  lon2 = 0,
+  lat2 = 0
+)
+
+# https://stackoverflow.com/a/51922422/3361298
+for (i in 1:nrow(data_process)){
+  catchment <- data_process$catchment[i]
+  c(df$lat1[i], df$lon1[i]) %<-% (camels_topo %>% filter(catchment_id == catchment) %>% select(gauge_lat, gauge_lon) %>% unlist())
+  
+  n_neighbor <- data_process$n_neighbor[i]
+  c(df$lat2[i], df$lon2[i]) %<-% (camels_topo %>% filter(catchment_id == n_neighbor) %>% select(gauge_lat, gauge_lon) %>% unlist())
+}
+
+
+dt <- as.data.table(df)
+
+## To use `sfheaders` the data needs to be in long form
+
+dt1 <- dt[, .(id, lon = lon1, lat = lat1)]
+dt2 <- dt[, .(id, lon = lon2, lat = lat2)]
+
+## Add on a 'sequence' variable so we know which one comes first
+dt1[, seq := 1L ]
+dt2[, seq := 2L ]
+
+## put back together
+dt <- rbindlist(list(dt1, dt2), use.names = TRUE)
+setorder(dt, id, seq)
+
+sf <- sfheaders::sf_linestring(
+  obj = dt
+  , x = "lon"
+  , y = "lat"
+  , linestring_id = "id"
+) 
+
+geophysio <- st_read("./data/physio_shp/physio.shp") %>%
+  select(PROVINCE) %>% # PROVINCE , DIVISION
+  rename(DIVISION = PROVINCE)
+st_crs(sf) <- st_crs(geophysio)
+st_write(sf,dsn = "./data/catchment_links/links_NMDS.shp")
+
+
+
+
+
+
+
+# euclidean distance ------------------------------------------------------
 
 # searching the nearest neighbors; k=2 is to exclude itself
 c(nn.idx, nn.dists) %<-% nn2(data = P, query = P, k = 2)
