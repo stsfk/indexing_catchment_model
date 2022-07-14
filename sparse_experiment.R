@@ -9,8 +9,8 @@ pacman::p_load(tidyverse,
                hydroGOF,
                caret,
                tidymodels,
-               mlrMBO,
-               ggpubr)
+               mlrMBO
+               )
 
 # seed --------------------------------------------------------------------
 
@@ -256,25 +256,44 @@ end_time - sta_time
 
 save(eval_grid, file = "sparse_exp.Rda")
 
-
-
-# plot --------------------------------------------------------------------
-
 data_plot <- eval_grid %>%
   select(ratio, r2, rmse) %>%
   transmute(ratio = ratio * 100,
-         `R-squared` = r2,
-         RMSE = rmse) %>%
+            `R-squared` = r2,
+            RMSE = rmse) %>%
   gather(item, value, -ratio) 
 
+# plot --------------------------------------------------------------------
+load("./data/sparse_exp_plot.Rda")
+
+data_plot2 <- data_plot %>%
+  group_by(ratio, item) %>%
+  summarise(mean_value=mean(value))
 
 ggplot(data_plot, aes(ratio, value))+
-  geom_point(color = "steelblue")+
-  geom_line()+
+  geom_point(color = "steelblue", size = 0.8, shape = 1)+
+  geom_line(data = data_plot2, aes(ratio, mean_value))+
   facet_wrap(~item, ncol = 1, scales = "free") +
   scale_x_continuous(breaks = c(0:5)*20) +
   labs(x = "Density of data set (percentage of available weights)") +
   theme_bw()+
-  theme(axis.title.y = element_blank())
+  theme_bw(base_size = 9)+
+  theme(
+    axis.title.y = element_blank(),
+    legend.position = "none",
+    strip.background = element_rect(fill = "grey80",color = NA),
+    panel.border = element_blank(),
+    panel.background = element_rect(fill = "grey95")
+  )
+
+ggsave(filename = "./data/plot/sparse_exp.pdf",   width = 5,
+       height = 3.5,
+       units = "in")
+
+ggsave(filename = "./data/plot/sparse_exp.png",   width = 5,
+       height = 3.4,
+       units = "in",
+       dpi = 400)
+
 
 # recycle -----------------------------------------------------------------
