@@ -54,15 +54,12 @@ catchment_points <- catchment_points %>%
 # functions ---------------------------------------------------------------
 
 compute_distance <- function(x, y, Q){
-  (x - y) %*% t(Q) %>% as.vector()
+  mean(abs(as.vector((x - y) %*% t(Q))))
 }
 
 # compute distance metrics ------------------------------------------------
 
-LB <- apply(Q, 2, min)*1.1
-UB <- apply(Q, 2, max)*1.1
-
-eval_grid <- expand_grid(x=1:nrow(P), y=1:nrow(P)) # nrow(P)
+eval_grid <- expand_grid(x=1:nrow(P), y=1:nrow(P))
 
 n_catchments <- 533 
 eval_grid <- expand_grid(x=1:n_catchments, y=1:n_catchments) %>%
@@ -72,8 +69,7 @@ compute_distance_wrapper <- function(i){
   compute_distance(
     x = P[eval_grid$x[[i]],],
     y = P[eval_grid$y[[i]],],
-    LB,
-    UB
+    Q
   )
 }
 
@@ -167,11 +163,11 @@ plot_grid(
   rel_heights = c(1, 1.4)
 )
 
-ggsave(filename = "./data/plot/NMDS.pdf",   width = 7,
+ggsave(filename = "./data/plot/NMDS_emperical.pdf",   width = 7,
        height = 5,
        units = "in")
 
-ggsave(filename = "./data/plot/NMDS.png",   width = 7,
+ggsave(filename = "./data/plot/NMDS_emperical.png",   width = 7,
        height = 5,
        units = "in",
        dpi = 400)
@@ -179,132 +175,3 @@ ggsave(filename = "./data/plot/NMDS.png",   width = 7,
 # Stop --------------------------------------------------------------------
 
 stopCluster(cl)
-
-
-
-
-# Recycle -----------------------------------------------------------------
-
-nmdsresults$conf[[1]] %>% plot()
-nmdsresults$conf[[2]] %>% plot()
-
-example_NMDS=monoMDS(dist_m, k=2)
-example_NMDS=metaMDS(dist_m, k = 2)
-
-stressplot(example_NMDS)
-plot(example_NMDS)
-
-ordiplot(example_NMDS,type="n")
-
-
-
-
-metaMDSiter(island.spp_distmat,
-            distance = "bray",
-            k = 3,
-            maxit = 999, 
-            trymax = 500,
-            wascores = TRUE)
-
-fit <- cmdscale(dist_m,eig=TRUE, k=2) # k is the number of dim
-fit # view results
-
-# plot solution
-x <- fit$points[,1]
-y <- fit$points[,2]
-plot(x, y)
-text(x, y, labels = row.names(mydata), cex=.7)
-
-
-
-
-dist_m <- matrix(nrow = 533, ncol = 533)
-
-x <- c(0,0,0)
-y <- c(1,2,3)
-LB <- c(-1,-10,-100)
-UB <- c(1,10,100)
-
-compute_distance(x,y,LB,UB)
-
-
-x <- c(0,0)
-y <- c(1,1)
-LB <- c(-1,-1)
-UB <- c(1,1)
-compute_distance(x,y,LB,UB)
-
-
-
-
-input_dim <- length(x)
-random_numbers <- runif(n = n_samples*input_dim)
-random_matrix <- LB + (UB - LB) * matrix(random_numbers, nrow = input_dim)
-
-((y-x)*random_matrix) %>%
-  colSums() %>%
-  abs() %>%
-  mean()
-
-# 
-
-a1 = 1
-a2 = 1
-n_samples = 10000
-
-mean(abs(a1*runif(n_samples,-1,1) - a2*runif(n_samples,-1,1)))
-
-
-mean(abs(2*runif(n_samples,-1,1) - 2*runif(n_samples,-1,1)))
-mean(abs(1*runif(n_samples,-1,1) - 3*runif(n_samples,-1,1)))
-
-
-mean(abs(a1*runif(n_samples,-1,1) - a2*runif(n_samples,-1,1)))
-
-
-
-# point a: (0,0)
-# point b: (1,0)
-# point c: (1,1)
-# distance ab:
-mean(abs(1*runif(n_samples,-1,1) + 0*runif(n_samples,-1,1)))
-
-# distance bc:
-mean(abs(0*runif(n_samples,-1,1) + 1*runif(n_samples,-1,1)))
-
-# distance ac:
-mean(abs(1*runif(n_samples,-1,1) + 1*runif(n_samples,-1,1)))
-# ab + bc > ac
-
-
-
-
-
-
-# point a: (0,0)
-# point b: (1,1)
-# point c: (10,5)
-# distance ab:
-mean(abs(1*runif(n_samples,-1,1) + 1*runif(n_samples,-1,1)))
-
-# distance bc:
-mean(abs(9*runif(n_samples,-1,1) + 4*runif(n_samples,-1,1)))
-
-# distance ac:
-mean(abs(10*runif(n_samples,-1,1) + 5*runif(n_samples,-1,1)))
-# ab + bc > ac
-
-
-for (i in 1:nrow(dist_m)){
-  for (j in 1:ncol(dist_m)){
-    
-    if (i!=j){
-      dist_m[i,j] <- eval_grid %>% 
-        filter(x == min(i,j), y == max(i,j)) %>%
-        pull(dist)
-    }
-  }
-}
-
-
-
