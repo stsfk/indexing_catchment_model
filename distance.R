@@ -63,8 +63,8 @@ compute_distance <- function(x, y, LB, UB, n_samples = 1000000){
 
 # compute distance metrics ------------------------------------------------
 
-LB <- apply(Q, 2, min)*1.1
-UB <- apply(Q, 2, max)*1.1
+LB <- apply(Q, 2, min)
+UB <- apply(Q, 2, max)
 
 eval_grid <- expand_grid(x=1:nrow(P), y=1:nrow(P)) # nrow(P)
 
