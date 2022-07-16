@@ -266,7 +266,7 @@ eval_grid <- expand_grid(
 sta_time <- Sys.time()
 
 for (i in 1:nrow(eval_grid)){
-  eval_grid$out[[i]] <- sparse_gof_wrapper(frac = 1)
+  eval_grid$out[[i]] <- factorization_wrapper(frac = 1)
   eval_grid$r2[[i]] <- eval_grid$out[[i]]$r2
   eval_grid$rmse[[i]] <- eval_grid$out[[i]]$rmse
   
