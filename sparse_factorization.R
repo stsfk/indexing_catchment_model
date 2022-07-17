@@ -9,7 +9,8 @@ pacman::p_load(tidyverse,
                hydroGOF,
                caret,
                tidymodels,
-               mlrMBO)
+               mlrMBO,
+               ModelMetrics)
 
 # seed --------------------------------------------------------------------
 
@@ -98,16 +99,24 @@ data_process <- data_raw %>%
 
 # Experiments -------------------------------------------------------------
 
+
 prepare_modeling_data <-
-  function(frac = 0.1,
+  function(frac = 1,
            train_portion = 0.6,
            val_portion = 0.2,
            test_portion = 0.2) {
+    # This function splits a subset of the data set in to train_portion, val_portion, and test_portion.
+    # frac: the fraction of samples in the data set used in modeling
+    # train_portion, val_portion, and test_portion of the subset of the data are used for different roles.
+    
+    # Creating a subset of "data_process" for modeling
     data_sample <- data_process %>%
       group_by(model_id) %>%
       sample_frac(frac) %>%
-      ungroup()
+      ungroup() %>%
+      arrange(model_id)
     
+    # split the subset into train, validation, and test sets
     data_train_val <- data_sample %>%
       group_by(model_id) %>%
       sample_frac(train_portion + val_portion) %>%
@@ -124,6 +133,7 @@ prepare_modeling_data <-
     data_test <- data_sample %>%
       filter(record_id %in% setdiff(data_sample$record_id, data_train_val$record_id))
     
+    # return the data set and the row id
     list(
       data_train = data_train %>% select(-record_id),
       data_val = data_val %>% select(-record_id),
@@ -134,8 +144,8 @@ prepare_modeling_data <-
     )
   }
 
-
-sparse_gof_wrapper <- function(frac = 0.1) {
+factorization_wrapper <- function(frac = 1) {
+  # splitting
   c(data_train,
     data_val,
     data_test,
@@ -143,7 +153,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
     record_id_val,
     record_id_test) %<-% prepare_modeling_data(frac = frac)
   
-  # training
+  # training set
   train_set <- data_memory(
     user_index = data_train$catchment_id,
     item_index = data_train$model_id,
@@ -151,6 +161,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
     index1 = T
   )
   
+  # validation set
   val_set <- data_memory(
     user_index = data_val$catchment_id,
     item_index = data_val$model_id,
@@ -158,6 +169,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
     index1 = T
   )
   
+  # training and validation set combined
   data_train_val <- data_train %>%
     bind_rows(data_val)
   train_val_set <- data_memory(
@@ -167,6 +179,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
     index1 = T
   )
   
+  # test set
   test_set <- data_memory(
     user_index = data_test$catchment_id,
     item_index = data_test$model_id,
@@ -176,6 +189,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
   
   # experiment
   scoringFunction <- function(x) {
+    # 7 hyperparameters are used
     dim <- x["dim"] %>% unlist()
     lrate <- x["lrate"] %>% unlist()
     niter <- x["niter"] %>% unlist()
@@ -202,13 +216,14 @@ sparse_gof_wrapper <- function(frac = 0.1) {
       )
     )
     
-    rmse <-
-      ModelMetrics::rmse(actual = data_val$rating,
-                         predicted = r$predict(val_set))
+    # rmse is used as the optimization objective
+    rmse <- ModelMetrics::rmse(actual = data_val$rating,
+                               predicted = r$predict(val_set))
     
     return(rmse)
   }
   
+  # create objective fucntion in mlrMBO required format
   obj_fun <- makeSingleObjectiveFunction(
     fn = scoringFunction,
     par.set = makeParamSet(
@@ -224,6 +239,7 @@ sparse_gof_wrapper <- function(frac = 0.1) {
     minimize = TRUE
   )
   
+  # statistical design 
   des <- generateDesign(
     n = 5 * getNumberOfParameters(obj_fun),
     par.set = getParamSet(obj_fun),
@@ -232,9 +248,11 @@ sparse_gof_wrapper <- function(frac = 0.1) {
   
   des$y = apply(des, 1, obj_fun)
   
+  # set number of generation
   control <- makeMBOControl() %>%
     setMBOControlTermination(., iters = 100 - 5 * getNumberOfParameters(obj_fun))
   
+  # run Bayesian optimization 
   run <- mbo(
     fun = obj_fun,
     design = des,
@@ -242,17 +260,21 @@ sparse_gof_wrapper <- function(frac = 0.1) {
     show.info = TRUE
   )
   
+  # get the optimal hyperparameters and run on the data set combining training and validation
   r = Reco()
   
   opts <- run$x
   opts$nthread <- nthread
   opts$verbose <- F
   r$train(train_val_set, opts = opts)
+  
+  # evaluating on test set
   pred_rvec <- r$predict(test_set)
   r2 <- cor(data_test$rating, pred_rvec) ^ 2
   rmse <- ModelMetrics::rmse(actual = data_test$rating,
                              predicted = pred_rvec)
   
+  # outputing
   c(P,Q) %<-% r$output(out_memory(), out_memory())
   
   out <- list(
@@ -268,8 +290,9 @@ sparse_gof_wrapper <- function(frac = 0.1) {
   )
 }
 
+# Run ---------------------------------------------------------------------
+
 eval_grid <- expand_grid(
-  ratio = c(0.01, 0.02, 0.03, 0.04, 0.05, 0.1, 0.2, 0.4, 0.8, 1),
   r2 = 0,
   rmse = 0,
   out = vector("list",1),
@@ -279,8 +302,7 @@ eval_grid <- expand_grid(
 sta_time <- Sys.time()
 
 for (i in 1:nrow(eval_grid)){
-  frac <- eval_grid$ratio[i]
-  eval_grid$out[[i]] <- sparse_gof_wrapper(frac)
+  eval_grid$out[[i]] <- factorization_wrapper(frac = 1)
   eval_grid$r2[[i]] <- eval_grid$out[[i]]$r2
   eval_grid$rmse[[i]] <- eval_grid$out[[i]]$rmse
   
@@ -291,46 +313,19 @@ end_time <- Sys.time()
 
 end_time - sta_time
 
-save(eval_grid, file = "sparse_exp.Rda")
+save(eval_grid, file = "sparse_factorization.Rda")
 
-data_plot <- eval_grid %>%
-  select(ratio, r2, rmse) %>%
-  transmute(ratio = ratio * 100,
-            `R-squared` = r2,
-            RMSE = rmse) %>%
-  gather(item, value, -ratio) 
+
+# Post processing ---------------------------------------------------------
+load("./data/sparse_factorization.Rda")
+
+eval_grid <- eval_grid %>%
+  filter(!is.na(r2))
+
+eval_grid$r2 %>% mean(na.rm = T)
+eval_grid$r2 %>% var(na.rm = T)
+
+eval_grid$rmse %>% mean(na.rm = T)
+eval_grid$rmse %>% var(na.rm = T)
 
 # plot --------------------------------------------------------------------
-load("./data/sparse_exp_plot.Rda")
-
-data_plot2 <- data_plot %>%
-  group_by(ratio, item) %>%
-  summarise(mean_value=mean(value))
-
-ggplot(data_plot, aes(ratio, value))+
-  geom_point(color = "steelblue", size = 0.8, shape = 1)+
-  geom_line(data = data_plot2, aes(ratio, mean_value))+
-  facet_wrap(~item, ncol = 1, scales = "free") +
-  scale_x_continuous(breaks = c(0:5)*20) +
-  labs(x = "Density of data set (percentage of available weights)") +
-  theme_bw()+
-  theme_bw(base_size = 9)+
-  theme(
-    axis.title.y = element_blank(),
-    legend.position = "none",
-    strip.background = element_rect(fill = "grey80",color = NA),
-    panel.border = element_blank(),
-    panel.background = element_rect(fill = "grey95")
-  )
-
-ggsave(filename = "./data/plot/sparse_exp.pdf",   width = 5,
-       height = 3.5,
-       units = "in")
-
-ggsave(filename = "./data/plot/sparse_exp.png",   width = 5,
-       height = 3.4,
-       units = "in",
-       dpi = 400)
-
-
-# recycle -----------------------------------------------------------------
