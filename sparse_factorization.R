@@ -302,18 +302,30 @@ eval_grid <- expand_grid(
 sta_time <- Sys.time()
 
 for (i in 1:nrow(eval_grid)){
-  eval_grid$out[[i]] <- factorization_wrapper(frac = 1)
-  eval_grid$r2[[i]] <- eval_grid$out[[i]]$r2
-  eval_grid$rmse[[i]] <- eval_grid$out[[i]]$rmse
   
-  gc()
+  # Matrix factorization can stuck in local minimal, in which case r2 value is NA
+  # check if r2 is NA; if so, run matrix factorization again
+  okay_result <- FALSE
+  while (!okay_result){
+    temp <- factorization_wrapper(frac = 1)
+    
+    if (!is.na(temp$r2)){
+      okay_result <- TRUE
+    }
+    
+    gc()
+  }
+  
+  eval_grid$out[[i]] <- temp
+  eval_grid$r2[[i]] <- temp$r2
+  eval_grid$rmse[[i]] <- temp$rmse
 }
 
 end_time <- Sys.time()
 
 end_time - sta_time
 
-save(eval_grid, file = "sparse_factorization.Rda")
+save(eval_grid, file = "./data/sparse_factorization.Rda")
 
 
 # Post processing ---------------------------------------------------------
