@@ -187,7 +187,7 @@ factorization_wrapper <- function(frac = 1) {
     return(rmse)
   }
   
-  # create objective fucntion in mlrMBO required format
+  # create objective function in mlrMBO required format
   obj_fun <- makeSingleObjectiveFunction(
     fn = scoringFunction,
     par.set = makeParamSet(
@@ -238,7 +238,7 @@ factorization_wrapper <- function(frac = 1) {
   rmse <- ModelMetrics::rmse(actual = data_test$rating,
                              predicted = pred_rvec)
   
-  # outputing
+  # outputting
   c(P,Q) %<-% r$output(out_memory(), out_memory())
   
   out <- list(
@@ -290,7 +290,7 @@ end_time <- Sys.time()
 
 end_time - sta_time
 
-save(eval_grid, file = "data/dens_factorization.Rda")
+save(eval_grid, file = "./data/dens_factorization.Rda")
 
 
 # Post processing ---------------------------------------------------------
