@@ -18,14 +18,15 @@ pacman::p_load(tidyverse,
 
 # seed --------------------------------------------------------------------
 
-#set.seed(1234)
-nthread <- 14 # number of CPU thread
+set.seed(1234)
+nthread <- 10 # number of CPU thread
 
 # data --------------------------------------------------------------------
 
 weights <- read_csv("./data/SM.csv",
                     col_names = c("KGE", "NSE", "RMSE"))
 
+# 10 model classes in the dense data set
 model_class  <- c(
   'm_01_collie1_1p_1s',
   'm_05_ihacres_7p_1s',
@@ -43,6 +44,7 @@ n_catchments <- 533
 n_model_classes <- length(model_class)
 n_model_instances <-  nrow(weights)/n_catchments/n_model_classes # number of instance of each model class
 
+# assign catchment id and model instance id to each row
 catchment_id <- rep(1:n_catchments, each = n_model_instances)
 data_raw <- weights %>%
   bind_cols(expand_grid(model_class, catchment_id)) %>%
@@ -54,6 +56,7 @@ data_raw <- weights %>%
   ) %>%
   select(model_class, catchment_id, model_id, KGE, NSE, RMSE)
 
+# normalizing NSE on a scale from 0 to 10
 data_process <- data_raw %>%
   mutate(NNSE = 1 / (2 - NSE) * 10) %>%
   dplyr::select(catchment_id,
@@ -62,129 +65,170 @@ data_process <- data_raw %>%
   rename(rating = NNSE) %>%
   mutate(record_id = 1:n())
 
-# keep 500 catchments for model building and 30 catchments for look-up
-catchment_id_building <- sample(1:n_catchments, 500) %>% sort()
-catchment_id_lookup <- setdiff(1:n_catchments, catchment_id_building)
+# Function ----------------------------------------------------------------
 
-data_process_building <- data_process %>%
-  filter(catchment_id %in% catchment_id_building)
-
-data_process_lookup <- data_process %>%
-  filter(catchment_id %in% catchment_id_lookup)
-
-
-# Building model ----------------------------------------------------------
-
-train_portion = 0.8
-val_portion = 0.2
-
-data_train <- data_process_building %>%
-  group_by(model_id) %>%
-  sample_frac(train_portion) %>%
-  ungroup()
-
-data_val <- data_process_building %>%
-  filter(record_id %in% setdiff(data_process_building$record_id, data_train$record_id))
-
-record_id_train <- data_train$record_id
-record_id_val <- data_val$record_id
-
-train_set <- data_memory(
-  user_index = data_train$catchment_id,
-  item_index = data_train$model_id,
-  rating = data_train$rating,
-  index1 = T
-)
-
-val_set <- data_memory(
-  user_index = data_val$catchment_id,
-  item_index = data_val$model_id,
-  rating = data_val$rating,
-  index1 = T
-)
-
-train_val_set <- data_memory(
-  user_index = data_process_building$catchment_id,
-  item_index = data_process_building$model_id,
-  rating = data_process_building$rating,
-  index1 = T
-)
-
-scoringFunction <- function(x) {
-  dim <- x["dim"] %>% unlist()
-  lrate <- x["lrate"] %>% unlist()
-  niter <- x["niter"] %>% unlist()
+prepare_base_look_split <- function(n_sample_look_up = 50){
+  # functions to create subsets that are used for deriving P,Q and look up
   
-  costp_l1 <- x["costp_l1"] %>% unlist()
-  costp_l2 <- x["costp_l2"] %>% unlist()
-  costq_l1 <- x["costq_l1"] %>% unlist()
-  costq_l2 <- x["costq_l2"] %>% unlist()
+  n_sample_base <- n_catchments - n_sample_look_up
+  
+  catchment_base <- sample(1:n_catchments, size = n_sample_base) %>% sort()
+  catchment_look_up <- setdiff(1:n_catchments, catchment_base) %>% sort()
+  
+  # Creating subsets of "data_process" for modeling
+  data_base <- data_process %>%
+    filter(catchment_id %in% catchment_base)
+  
+  data_look_up <- data_process %>%
+    filter(catchment_id %in% catchment_look_up)
+  
+  list(
+    data_base = data_base,
+    data_look_up = data_look_up
+  )
+}
+
+prepare_modeling_data <-
+  function(data_base,
+           train_portion = 0.8,
+           val_portion = 0.2) {
+    # This function splits a subset of data_base in to train_portion and val_portion.
+    # train_portion and val_portion of the subset of the data are used for different roles.
+    
+    # split the subset into train and validation sets
+    data_train <- data_base %>%
+      group_by(model_id) %>%
+      slice_sample(prop = train_portion) %>%
+      ungroup() %>%
+      arrange(model_id)
+    
+    data_val <- data_base %>%
+      filter(record_id %in% setdiff(data_base$record_id, data_train$record_id))%>%
+      arrange(model_id)
+    
+    # return the data set and the row id
+    list(
+      data_train = data_train %>% select(-record_id),
+      data_val = data_val %>% select(-record_id),
+      record_id_train = data_train$record_id,
+      record_id_val = data_val$record_id
+    )
+  }
+
+derive_PQ <- function(data_train, data_val){
+  train_set <- data_memory(
+    user_index = data_train$catchment_id,
+    item_index = data_train$model_id,
+    rating = data_train$rating,
+    index1 = T
+  )
+  
+  val_set <- data_memory(
+    user_index = data_val$catchment_id,
+    item_index = data_val$model_id,
+    rating = data_val$rating,
+    index1 = T
+  )
+  
+  train_val_set <- data_memory(
+    user_index = data_base$catchment_id,
+    item_index = data_base$model_id,
+    rating = data_base$rating,
+    index1 = T
+  )
+  
+  scoringFunction <- function(x) {
+    # 7 hyperparameters are used
+    
+    dim <- x["dim"] %>% unlist()
+    lrate <- x["lrate"] %>% unlist()
+    niter <- x["niter"] %>% unlist()
+    
+    costp_l1 <- x["costp_l1"] %>% unlist()
+    costp_l2 <- x["costp_l2"] %>% unlist()
+    costq_l1 <- x["costq_l1"] %>% unlist()
+    costq_l2 <- x["costq_l2"] %>% unlist()
+    
+    r = Reco()
+    
+    r$train(
+      train_set,
+      opts = list(
+        dim = dim,
+        costp_l1 = costp_l1,
+        costp_l2 = costp_l2,
+        costq_l1 = costq_l1,
+        costq_l2 = costq_l2,
+        lrate = lrate,
+        niter = niter,
+        verbose = F,
+        nthread = nthread
+      )
+    )
+    
+    rmse <-
+      ModelMetrics::rmse(actual = data_val$rating,
+                         predicted = r$predict(val_set))
+    
+    return(rmse)
+  }
+  
+  # create objective function in mlrMBO required format
+  obj_fun <- makeSingleObjectiveFunction(
+    fn = scoringFunction,
+    par.set = makeParamSet(
+      makeIntegerParam("dim", lower = 1, upper = 100),
+      makeNumericParam("lrate",  lower = 1e-04,   upper = 0.2),
+      makeIntegerParam("niter", lower = 5,  upper = 1000),
+      makeNumericParam("costp_l1",  lower = 0,   upper = 0.1),
+      makeNumericParam("costp_l2",  lower = 0,   upper = 0.1),
+      makeNumericParam("costq_l1",  lower = 0,   upper = 0.1),
+      makeNumericParam("costq_l2",  lower = 0,   upper = 0.1)
+    ),
+    has.simple.signature = FALSE,
+    minimize = TRUE
+  )
+  
+  des <- generateDesign(
+    n = 5 * getNumberOfParameters(obj_fun),
+    par.set = getParamSet(obj_fun),
+    fun = lhs::randomLHS
+  )
+  
+  des$y = apply(des, 1, obj_fun)
+  
+  control <- makeMBOControl() %>%
+    setMBOControlTermination(., iters = 100 - 5 * getNumberOfParameters(obj_fun))
+  
+  run <- mbo(
+    fun = obj_fun,
+    design = des,
+    control = control,
+    show.info = TRUE
+  )
   
   r = Reco()
   
-  r$train(
-    train_set,
-    opts = list(
-      dim = dim,
-      costp_l1 = costp_l1,
-      costp_l2 = costp_l2,
-      costq_l1 = costq_l1,
-      costq_l2 = costq_l2,
-      lrate = lrate,
-      niter = niter,
-      verbose = F,
-      nthread = nthread
-    )
-  )
+  opts <- run$x
+  opts$nthread <- nthread
+  opts$verbose <- F
+  r$train(train_val_set, opts = opts)
   
-  rmse <-
-    ModelMetrics::rmse(actual = data_val$rating,
-                       predicted = r$predict(val_set))
+  c(P,Q) %<-% r$output(out_memory(), out_memory())
   
-  return(rmse)
+  list(P = P, Q = Q)
 }
 
-obj_fun <- makeSingleObjectiveFunction(
-  fn = scoringFunction,
-  par.set = makeParamSet(
-    makeIntegerParam("dim", lower = 1, upper = 100),
-    makeNumericParam("lrate",  lower = 1e-04,   upper = 0.2),
-    makeIntegerParam("niter", lower = 5,  upper = 1000),
-    makeNumericParam("costp_l1",  lower = 0,   upper = 0.1),
-    makeNumericParam("costp_l2",  lower = 0,   upper = 0.1),
-    makeNumericParam("costq_l1",  lower = 0,   upper = 0.1),
-    makeNumericParam("costq_l2",  lower = 0,   upper = 0.1)
-  ),
-  has.simple.signature = FALSE,
-  minimize = TRUE
-)
+c(data_base, data_look_up) %<-% prepare_base_look_split(n_sample_look_up = 500)
+c(data_train, data_val, record_id_train = data_train$record_id, record_id_val) %<-% prepare_modeling_data(data_base)
 
-des <- generateDesign(
-  n = 3 * getNumberOfParameters(obj_fun),
-  par.set = getParamSet(obj_fun),
-  fun = lhs::randomLHS
-)
+c(P, Q) %<-% derive_PQ(data_train, data_val)
 
-des$y = apply(des, 1, obj_fun)
 
-control <- makeMBOControl() %>%
-  setMBOControlTermination(., iters = 30 - 4 * getNumberOfParameters(obj_fun))
 
-run <- mbo(
-  fun = obj_fun,
-  design = des,
-  control = control,
-  show.info = TRUE
-)
 
-r = Reco()
 
-opts <- run$x
-opts$nthread <- nthread
-opts$verbose <- F
-r$train(train_val_set, opts = opts)
 
-c(P,Q) %<-% r$output(out_memory(), out_memory())
 
 
 # Estimating latent variable of new users ---------------------------------
