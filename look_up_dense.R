@@ -219,19 +219,14 @@ derive_PQ <- function(data_train, data_val){
   list(P = P, Q = Q)
 }
 
-c(data_base, data_look_up) %<-% prepare_base_look_split(n_sample_look_up = 500)
+c(data_base, data_look_up) %<-% prepare_base_look_split(n_sample_look_up = 510)
 c(data_train, data_val, record_id_train = data_train$record_id, record_id_val) %<-% prepare_modeling_data(data_base)
 
 c(P, Q) %<-% derive_PQ(data_train, data_val)
 
 
+# Estimating latent variable value for new catchment ----------------------
 
-
-
-
-
-
-# Estimating latent variable of new users ---------------------------------
 
 n_evaluation <- 100
 
@@ -241,8 +236,8 @@ model_ind_evaluation <- sample(1:(n_model_instances*n_model_classes), n_evaluati
 model_ind_test <- setdiff(1:(n_model_instances*n_model_classes), model_ind_evaluation)
 
 Q_evaluation <- Q[model_ind_evaluation,]
-rating_evaluation <- data_process_lookup %>%
-  filter(catchment_id == catchment_id_lookup[i],
+rating_evaluation <- data_look_up %>%
+  filter(catchment_id == 1,
          model_id %in% model_ind_evaluation) %>%
   arrange(model_id) %>%
   pull(rating)
@@ -261,7 +256,16 @@ fn <- function(x){
 LB <- rep(range(P,na.rm = T)[1]*1.25, dim(P)[2])
 UB <- rep(range(P,na.rm = T)[2]*1.25, dim(P)[2])
 
-GA <- ga(type = "real-valued", fitness = fn, lower = LB, upper = UB, maxiter = 5000)
+GA <-
+  ga(
+    type = "real-valued",
+    fitness = fn,
+    lower = LB,
+    upper = UB,
+    maxiter = 5000,
+    parallel = T,
+    monitor = F
+  )
 
 P_new_catchment <- GA@solution[1,]
 pred <- P_new_catchment %*%
