@@ -298,6 +298,24 @@ end_time - sta_time
 
 save(eval_grid, file = "./data/sparse_exp.Rda")
 
+# summary --------------------------------------------------------------------
+load("./data/sparse_exp_summary.Rda")
+
+eval_grid_summary %>% transmute(
+  r2 = paste0(
+    round(r2_mean, 3),
+    "(",
+    formatC(r2_sd, format = "e", digits = 2),
+    ")"
+  ),
+  rmse = paste0(
+    round(rmse_mean, 3),
+    "(",
+    formatC(rmse_sd, format = "e", digits = 2),
+    ")"
+  )
+)
+
 # plot --------------------------------------------------------------------
 load("./data/sparse_exp.Rda")
 
