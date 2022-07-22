@@ -79,7 +79,7 @@ data_plot <- tibble(
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
 p1 <- ggplot(data_plot, aes(x,y, color = DIVISION))+
-  geom_point(size = 0.9)+
+  geom_point(size = 0.7, shape = 21)+
   scale_color_manual(values=cbPalette)+
   theme_bw()+
   labs(x = "NMDS Axis 1",
@@ -93,7 +93,7 @@ p1 <- ggplot(data_plot, aes(x,y, color = DIVISION))+
   )
 
 p2 <- ggplot(data_plot, aes(x,y, color = DIVISION))+
-  geom_point(size = 0.9)+
+  geom_point(size = 0.7, shape = 21)+
   scale_color_manual(values=cbPalette)+
   facet_wrap(~DIVISION, ncol = 4)+
   labs(x = "NMDS Axis 1",
@@ -125,6 +125,6 @@ ggsave(filename = "./data/plot/NMDS.png",   width = 7,
        units = "in",
        dpi = 400)
 
-# Stop --------------------------------------------------------------------
+ # Stop --------------------------------------------------------------------
 
 stopCluster(cl)
