@@ -5,10 +5,15 @@ if (!require("pacman")) {
 pacman::p_load(tidyverse,
                zeallot,
                data.table,
-               doParallel)
+               doParallel,
+               Rfast,
+               Rfast2)
 
 cl <- makeCluster(detectCores()-2)
 registerDoParallel(cl)
+
+clusterEvalQ(cl, library(Rfast))
+clusterEvalQ(cl, library(Rfast2))
 
 # data --------------------------------------------------------------------
 load("./data/dens_factorization.Rda")
@@ -25,10 +30,12 @@ load_P_Q <- function(i){
 
 compute_distance <- function(x, y, LB, UB, n_samples = 500000){
   input_dim <- length(x)
-  random_numbers <- runif(n = n_samples*input_dim)
-  random_matrix <- LB + (UB - LB) * matrix(random_numbers, nrow = input_dim)
   
-  mean(abs(colSums((y-x)*random_matrix)))
+  M <- matrix(Rfast2::Runif(n = n_samples*input_dim), ncol = input_dim)
+  M <- Rfast::eachrow(M, (UB - LB)*(x - y), "*")
+  M <- Rfast::eachrow(M, (x - y)*LB, "+")
+  
+  mean(abs(Rfast::rowsums(M)))
 }
 
 # compute distance metrics ------------------------------------------------
@@ -85,4 +92,96 @@ for (i in 1:10){
 # Stop --------------------------------------------------------------------
 
 stopCluster(cl)
+
+
+# recycle -----------------------------------------------------------------
+
+compute_distance <- function(x, y, LB, UB, n_samples = 500000){
+  # This function computes the expected distance between x and y, where each dimension is scaled by a random vector
+  # the Manhattan distance is computed
+  
+  # dimension of vector x
+  input_dim <- length(x)
+  
+  # generate uniformly distributed random numbers of size n_samples*input_dim
+  random_numbers <- runif(n = n_samples*input_dim)
+  
+  # arrange the random numbers into a matrix of shape = input_dim * n_samples
+  random_matrix <- LB + (UB - LB) * matrix(random_numbers, nrow = input_dim)
+  
+  mean(abs(colSums((y-x)*random_matrix)))
+}
+
+compute_distance2 <- function(x, y, LB, UB, n_samples = 500000){
+  input_dim <- length(x)
+  
+  M <- matrix(Rfast2::Runif(n = n_samples*input_dim), ncol = input_dim)
+  M <- Rfast::eachrow(M, (UB - LB), "*")
+  M <- Rfast::eachrow(M, LB, "+")
+  M <- Rfast::eachrow(M, y - x, "*")
+  
+  mean(abs(Rfast::rowsums(M)))
+}
+
+compute_distance3 <- function(x, y, LB, UB, n_samples = 500000){
+  input_dim <- length(x)
+  
+  M <- matrix(Rfast2::Runif(n = n_samples*input_dim), ncol = input_dim)
+  M <- Rfast::eachrow(M, (UB - LB)*(x - y), "*")
+  M <- Rfast::eachrow(M, (x - y)*LB, "+")
+  
+  mean(abs(Rfast::rowsums(M)))
+}
+
+compute_distance4 <- function(x, y, LB, UB, n_samples = 500000){
+  input_dim <- length(x)
+  
+  v <- Rfast2::Runif(n = n_samples*input_dim)
+  v <- v*(UB - LB)*(x - y) + (x - y)*LB
+  
+  mean(abs(Rfast::rowsums(matrix(v, ncol = input_dim, byrow = T))))
+}
+
+xs <- list(x1 = x, x2 = x, x3 = x, x4 = x, x5 = x)
+ys <- list(y1 = y, y2 = y, y3 = y, y4 = y, y5 = y)
+
+compute_distance_list <- function(xs, ys, LB, UB, n_samples = 500000){
+  input_dim <- length(xs[[1]])
+  n_pairs <- length(xs)
+  
+  x_long <- unlist(xs)
+  y_long <- unlist(ys)
+  
+  LB_long <- rep(LB, n_pairs)
+  UB_long <- rep(UB, n_pairs)
+  
+  M <- matrix(Rfast2::Runif(n = n_samples*input_dim*n_pairs), ncol = input_dim*n_pairs)
+  M <- Rfast::eachrow(M, (UB_long - LB_long)*(x_long - y_long), "*")
+  M <- Rfast::eachrow(M, (x_long - y_long)*LB_long, "+")
+  
+  out <- rep(0, n_pairs)
+  for (i in 1:n_pairs){
+    out[[i]] <- mean(abs(Rfast::rowsums(M[,(i-1)*input_dim+1:input_dim])))
+  }
+  out
+}
+
+Rfast2::benchmark(compute_distance(x,y,LB,UB), times = 100)
+
+abs(Rfast::rowsums(M))
+
+v <- matrix(unlist(M), ncol = input_dim)
+
+M2 <- matrix(c(1:4),byrow = T, nrow = 2)
+matrix(unlist(M2), nrow = 4)
+
+
+c(P,Q) %<-% load_P_Q(1)
+x <- P[1,]
+y <- P[2,]
+
+LB <- apply(Q, 2, min)
+UB <- apply(Q, 2, max)
+
+Rfast2::benchmark(compute_distance(x,y,LB,UB), times = 100)
 
