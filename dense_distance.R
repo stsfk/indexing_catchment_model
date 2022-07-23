@@ -29,12 +29,20 @@ load_P_Q <- function(i){
 }
 
 compute_distance <- function(x, y, LB, UB, n_samples = 500000){
+  # This function computes the expected distance between x and y, where each dimension is scaled by a random vector
+  # the Manhattan distance is computed
+  
+  # dimension of vector x
   input_dim <- length(x)
   
+  # generate uniformly distributed random numbers of size n_samples*input_dim
   M <- matrix(Rfast2::Runif(n = n_samples*input_dim), ncol = input_dim)
+  # scale the random matrix
   M <- Rfast::eachrow(M, (UB - LB)*(x - y), "*")
+  # adding a base
   M <- Rfast::eachrow(M, (x - y)*LB, "+")
   
+  # compute the sum of each row to get sample distance, mean and abs to get the average distance
   mean(abs(Rfast::rowsums(M)))
 }
 
@@ -174,7 +182,6 @@ v <- matrix(unlist(M), ncol = input_dim)
 
 M2 <- matrix(c(1:4),byrow = T, nrow = 2)
 matrix(unlist(M2), nrow = 4)
-
 
 c(P,Q) %<-% load_P_Q(1)
 x <- P[1,]
