@@ -19,7 +19,7 @@ pacman::p_load(tidyverse,
 # seed --------------------------------------------------------------------
 
 set.seed(1234)
-nthread <- 10 # number of CPU thread
+nthread <- detectCores()-1 # number of CPU thread
 
 # data --------------------------------------------------------------------
 
@@ -67,24 +67,16 @@ data_process <- data_raw %>%
 
 # Function ----------------------------------------------------------------
 
-prepare_base_look_split <- function(n_sample_look_up = 50){
-  # functions to create subsets that are used for deriving P,Q and look up
-  
-  n_sample_base <- n_catchments - n_sample_look_up
-  
-  catchment_base <- sample(1:n_catchments, size = n_sample_base) %>% sort()
-  catchment_look_up <- setdiff(1:n_catchments, catchment_base) %>% sort()
-  
-  # Creating subsets of "data_process" for modeling
-  data_base <- data_process %>%
-    filter(catchment_id %in% catchment_base)
-  
-  data_look_up <- data_process %>%
-    filter(catchment_id %in% catchment_look_up)
-  
+#  Splitting with important groups, i.e., catchment_id
+train_folds <- groupKFold(data_process$catchment_id, k = 10)
+
+
+base_look_up_split <- function(train_fold){
+  # This function splits data_process into a data set for building recommender system,
+  # and a data set for look up experiments
   list(
-    data_base = data_base,
-    data_look_up = data_look_up
+    data_base = data_process[train_fold,],
+    data_look_up = data_process[-train_fold,]
   )
 }
 
@@ -103,7 +95,7 @@ prepare_modeling_data <-
       arrange(model_id)
     
     data_val <- data_base %>%
-      filter(record_id %in% setdiff(data_base$record_id, data_train$record_id))%>%
+      filter(record_id %in% setdiff(data_base$record_id, data_train$record_id)) %>%
       arrange(model_id)
     
     # return the data set and the row id
@@ -115,7 +107,11 @@ prepare_modeling_data <-
     )
   }
 
+
 derive_PQ <- function(data_train, data_val){
+  # This function derives the P and Q value from data_base 
+  
+  # prepare the data sets in the format required by recosystem
   train_set <- data_memory(
     user_index = data_train$catchment_id,
     item_index = data_train$model_id,
@@ -162,7 +158,7 @@ derive_PQ <- function(data_train, data_val){
         lrate = lrate,
         niter = niter,
         verbose = F,
-        nthread = nthread
+        nthread = nthread # nbin = 4*nthread^2+1
       )
     )
     
@@ -219,13 +215,21 @@ derive_PQ <- function(data_train, data_val){
   list(P = P, Q = Q)
 }
 
-c(data_base, data_look_up) %<-% prepare_base_look_split(n_sample_look_up = 510)
+
+i <- 1
+
+c(data_base, data_look_up) %<-% base_look_up_split(train_fold = train_folds[[i]])
 c(data_train, data_val, record_id_train = data_train$record_id, record_id_val) %<-% prepare_modeling_data(data_base)
 
 c(P, Q) %<-% derive_PQ(data_train, data_val)
 
 
-# Estimating latent variable value for new catchment ----------------------
+# Look up -----------------------------------------------------------------
+
+
+
+
+
 
 
 n_evaluation <- 100
