@@ -247,7 +247,7 @@ save(P,Q, train_folds, data_base, data_look_up, file = "./data/temp_look_up.Rda"
 load("./data/temp_look_up.Rda")
 
 # set the number of edges evaluated
-n_evaluation <- dim(P)[2]
+n_evaluation <- round(dim(P)[2])
 # set the portion used in training due GA hyperparameter optimization
 train_portion <- 0.8
 
@@ -291,7 +291,7 @@ split_Q <- function(Q, n_evaluation, train_portion, catchment_id_look_up){
   
   Q_evaluation <- Q[model_ind_evaluation,]
   
-  rating_evalution <- data_look_up %>%
+  rating_evaluation <- data_look_up %>%
     filter(catchment_id == catchment_id_look_up,
            model_id %in% model_ind_evaluation) %>%
     arrange(model_id) %>%
@@ -312,8 +312,8 @@ split_Q <- function(Q, n_evaluation, train_portion, catchment_id_look_up){
   sample_ind <- sample(seq_along(model_ind_evaluation), size = n_train) %>% sort()
   model_ind_train <- model_ind_evaluation[sample_ind]
   model_ind_val <- model_ind_evaluation[-sample_ind]
-  Q_train <- Q_evaluation[sample_ind,]
-  Q_val <- Q_evaluation[-sample_ind,]
+  Q_train <- Q[model_ind_train,]
+  Q_val <- Q[model_ind_val,]
   rating_train <- data_look_up %>%
     filter(catchment_id == catchment_id_look_up,
            model_id %in% model_ind_train) %>%
@@ -329,7 +329,7 @@ split_Q <- function(Q, n_evaluation, train_portion, catchment_id_look_up){
   # output
   list(
     Q_evaluation = Q_evaluation,
-    rating_evalution = rating_evalution,
+    rating_evaluation = rating_evaluation,
     Q_test = Q_test,
     rating_test = rating_test,
     Q_train = Q_train,
@@ -346,7 +346,7 @@ j <- 1
 catchment_id_look_up <- catchment_id_look_ups[[j]]
 
 c(
-  Q_evaluation, rating_evalution,
+  Q_evaluation, rating_evaluation,
   Q_test, rating_test,
   Q_train, rating_train, 
   Q_val, rating_val
