@@ -22,7 +22,8 @@ pacman::p_load(tidyverse,
 
 set.seed(1234)
 
-cl <- makeCluster(nthread)
+nthread <- detectCores()
+cl <- makeCluster(nthread-2)
 registerDoParallel(cl)
 
 clusterEvalQ(cl, library(Rfast))
@@ -332,6 +333,7 @@ split_Q <- function(Q, n_evaluation, train_portion, catchment_id_look_up){
     rating_evaluation = rating_evaluation,
     Q_test = Q_test,
     rating_test = rating_test,
+    model_ind_test = model_ind_test,
     Q_train = Q_train,
     rating_train = rating_train,
     Q_val = Q_val,
@@ -342,79 +344,108 @@ split_Q <- function(Q, n_evaluation, train_portion, catchment_id_look_up){
 
 # iterate over catchment_id_look_ups
 # catchment id used in current experiments
-j <- 1
-catchment_id_look_up <- catchment_id_look_ups[[j]]
 
-c(
-  Q_evaluation, rating_evaluation,
-  Q_test, rating_test,
-  Q_train, rating_train, 
-  Q_val, rating_val
-) %<-%
-  split_Q(Q, n_evaluation, train_portion, catchment_id_look_up)
+outs <- vector("list", length(catchment_id_look_ups))
 
-
-# get model_ind of the models used in the evaluation and the retrieval experiments
-# run ga with Q_train and rating_train
-fn <- fn_factory(Q_train, rating_train)
-
-LB <- apply(P[catchment_id_bases,], 2, min, na.rm = T)
-LB <- LB - abs(LB) * 0.25
-
-UB <- apply(P[catchment_id_bases,], 2, max, na.rm = T)
-UB <- UB + abs(UB) * 0.25
-
-GA <-
-  ga(
-    type = "real-valued",
-    popSize = length(LB)*2,
-    fitness = fn,
-    lower = LB,
-    upper = UB,
-    maxiter = 5000,
-    parallel = F,
-    keepBest = T,
-    monitor = F
+for (j in seq_along(catchment_id_look_ups)){
+  
+  catchment_id_look_up <- catchment_id_look_ups[[j]]
+  
+  c(
+    Q_evaluation, rating_evaluation,
+    Q_test, rating_test, model_ind_test,
+    Q_train, rating_train, 
+    Q_val, rating_val
+  ) %<-%
+    split_Q(Q, n_evaluation, train_portion, catchment_id_look_up)
+  
+  
+  # get model_ind of the models used in the evaluation and the retrieval experiments
+  # run ga with Q_train and rating_train
+  fn <- fn_factory(Q_train, rating_train)
+  
+  LB <- apply(P[catchment_id_bases,], 2, min, na.rm = T)
+  LB <- LB - abs(LB) * 0.25
+  
+  UB <- apply(P[catchment_id_bases,], 2, max, na.rm = T)
+  UB <- UB + abs(UB) * 0.25
+  
+  GA <-
+    ga(
+      type = "real-valued",
+      popSize = length(LB)*2,
+      fitness = fn,
+      lower = LB,
+      upper = UB,
+      maxiter = 5000,
+      parallel = F,
+      keepBest = T,
+      monitor = F
+    )
+  
+  # validate and find the optimal iteration using Q_val and rating_val
+  intermediate_solution <- GA@bestSol %>%
+    lapply(function(x) x[1,]) %>%
+    unlist() %>%
+    matrix(byrow = T, ncol = length(LB))
+  
+  out <-
+    apply(intermediate_solution, 1, function(x)
+      p_rmse(x, Q_val, rating_val))
+  
+  optimal_iter <- which.min(out)
+  
+  # run ga with Q_evaluation and rating_evaluation
+  fn <- fn_factory(Q_evaluation, rating_evaluation)
+  
+  GA <-
+    ga(
+      type = "real-valued",
+      popSize = length(LB)*2,
+      fitness = fn,
+      lower = LB,
+      upper = UB,
+      maxiter = optimal_iter,
+      parallel = F,
+      keepBest = F,
+      monitor = F
+    )
+  
+  # output
+  p_look_up <- GA@solution[1,] %>% unname()
+  
+  pred <- p_look_up %*%
+    t(Q_test) %>%
+    as.vector()
+  
+  top100_pred <- tibble(
+    model_ind = model_ind_test,
+    rating = pred,
+    case = "pred"
+  ) %>%
+    arrange(desc(rating)) %>%
+    slice(1:100)
+  
+  top100_actual <- tibble(
+    model_ind = model_ind_test,
+    rating = rating_test,
+    case = "actual"
+  ) %>%
+    arrange(desc(rating)) %>%
+    slice(1:100)
+  
+  outs[[j]] <- list(
+    p = p_look_up,
+    rmse = p_rmse(p_look_up, Q_test, rating_test),
+    r2 = cor(rating_test, pred)^2,
+    top100_actual = top100_actual,
+    top100_pred = top100_pred
   )
+}
 
-# validate and find the optimal iteration using Q_val and rating_val
-intermediate_solution <- GA@bestSol %>%
-  lapply(function(x) x[1,]) %>%
-  unlist() %>%
-  matrix(byrow = T, ncol = length(LB))
 
-out <-
-  apply(intermediate_solution, 1, function(x)
-    p_rmse(x, Q_val, rating_val))
 
-optimal_iter <- which.min(out)
 
-# run ga with Q_evaluation and rating_evaluation
-fn <- fn_factory(Q_evaluation, rating_evaluation)
-
-GA <-
-  ga(
-    type = "real-valued",
-    popSize = length(LB)*2,
-    fitness = fn,
-    lower = LB,
-    upper = UB,
-    maxiter = optimal_iter,
-    parallel = F,
-    keepBest = F,
-    monitor = F
-  )
-
-# testing
-p_look_up <- GA@solution[1,]
-pred <- p_look_up %*%
-  t(Q_test) %>%
-  as.vector()
-
-p_rmse(p_look_up, Q_test, rating_test)
-
-cor(rating_test, pred)^2
-plot(rating_test, pred)
 
 
 
