@@ -23,11 +23,12 @@ pacman::p_load(tidyverse,
 set.seed(1234)
 
 nthread <- detectCores()
-# cl <- makeCluster(nthread-2)
-# registerDoParallel(cl)
-# 
-# clusterEvalQ(cl, library(Rfast))
-# clusterEvalQ(cl, library(Rfast2))
+cl <- makeCluster(nthread-1)
+registerDoParallel(cl)
+
+clusterEvalQ(cl, library(Rfast))
+clusterEvalQ(cl, library(tidyverse))
+clusterEvalQ(cl, library(GA))
 
 # data --------------------------------------------------------------------
 
@@ -458,24 +459,29 @@ for (i in seq_along(train_folds)){
   # n_probed: the numbers of edges evaluated for estimating p
   
   eval_grid <- expand_grid(
-    n_probed = round(dim(P)[2]*0.5*1:4), # 0.5, 1, 1.5, and 2 times of the latent dimension
+    probed_ratio = 0.5*1:4, # 0.5, 1, 1.5, and 2 times of the latent dimension
     catchment_id_look_up = catchment_id_look_ups,
     out = vector("list", 1)
-  )
+  ) %>%
+    mutate(n_probed = round(dim(P)[2]*probed_ratio))
   
-  # iterate over eval_grid
-  for (j in 1:nrow(eval_grid)){
-    
-    n_probed <- eval_grid$n_probed[[j]]
-    catchment_id_look_up <- eval_grid$catchment_id_look_up[[j]]
+  out_wrapper <- function(x){
+    n_probed <- eval_grid$n_probed[[x]]
+    catchment_id_look_up <- eval_grid$catchment_id_look_up[[x]]
     train_portion <- 0.8
     
-    # evaluation
-    eval_grid$out[[j]] <- derive_p(Q, n_probed, train_portion, catchment_id_look_up)
+    # output
+    derive_p(Q, n_probed, train_portion, catchment_id_look_up)
   }
   
+  # iterate over eval_grid
+  outs <- foreach(x=1:nrow(eval_grid)) %dopar% 
+    out_wrapper(x)
+  
+  # save result to eval_grid
   eval_grid <- eval_grid %>%
-    mutate(train_fold_id = i)
+    mutate(out = outs) %>%
+    mutate(train_fold_id = i) # register fold id
   
   # output
   eval_grids[[i]] <- eval_grid
@@ -488,6 +494,8 @@ eval_grid <- eval_grids %>%
 
 save(Ps, Qs, train_folds, eval_grid, file = "./data/dense_look_up.Rda")
 
+# stop
+stopCluster(cl)
 
 # Recycle -----------------------------------------------------------------
 
