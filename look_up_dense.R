@@ -23,11 +23,11 @@ pacman::p_load(tidyverse,
 set.seed(1234)
 
 nthread <- detectCores()
-cl <- makeCluster(nthread-2)
-registerDoParallel(cl)
-
-clusterEvalQ(cl, library(Rfast))
-clusterEvalQ(cl, library(Rfast2))
+# cl <- makeCluster(nthread-2)
+# registerDoParallel(cl)
+# 
+# clusterEvalQ(cl, library(Rfast))
+# clusterEvalQ(cl, library(Rfast2))
 
 # data --------------------------------------------------------------------
 
@@ -79,46 +79,52 @@ data_process <- data_raw %>%
 #  Splitting with important groups, i.e., catchment_id
 train_folds <- groupKFold(data_process$catchment_id, k = 10)
 
-
 base_look_up_split <- function(train_fold){
   # This function splits data_process into a data set for building recommender system,
   # and a data set for look up experiments
+  
+  data_base <- data_process[train_fold,]
+  data_look_up <- data_process[-train_fold,]
+  
+  # get the catchment_ids for look up experiments
+  catchment_id_look_ups <- data_look_up %>% pull(catchment_id) %>% unique() %>% sort()
+  catchment_id_bases <- setdiff(1:n_catchments, catchment_id_look_ups)
+  
   list(
-    data_base = data_process[train_fold,],
-    data_look_up = data_process[-train_fold,]
+    data_base = data_base,
+    data_look_up = data_look_up,
+    catchment_id_bases = catchment_id_bases,
+    catchment_id_look_ups = catchment_id_look_ups
   )
 }
 
-prepare_modeling_data <-
-  function(data_base,
-           train_portion = 0.8,
-           val_portion = 0.2) {
-    # This function splits a subset of data_base in to train_portion and val_portion.
-    # train_portion and val_portion of the subset of the data are used for different roles.
-    
-    # split the subset into train and validation sets
-    data_train <- data_base %>%
-      group_by(model_id) %>%
-      slice_sample(prop = train_portion) %>%
-      ungroup() %>%
-      arrange(model_id)
-    
-    data_val <- data_base %>%
-      filter(record_id %in% setdiff(data_base$record_id, data_train$record_id)) %>%
-      arrange(model_id)
-    
-    # return the data set and the row id
-    list(
-      data_train = data_train %>% select(-record_id),
-      data_val = data_val %>% select(-record_id),
-      record_id_train = data_train$record_id,
-      record_id_val = data_val$record_id
-    )
-  }
+base_further_split <- function(data_base, train_portion = 0.8) {
+  # This function further splits a subset of data_base in to train_portion and val_portion,
+  # to optimize the hyperparameters of matrix factorization
+  # train_portion and 1-train_portion of the subset of the data are used for different roles.
+  
+  # split the subset into train and validation sets
+  data_train <- data_base %>%
+    group_by(model_id) %>%
+    slice_sample(prop = train_portion) %>%
+    ungroup() %>%
+    arrange(catchment_id, model_id)
+  
+  data_val <- data_base %>%
+    filter(record_id %in% setdiff(data_base$record_id, data_train$record_id)) %>%
+    arrange(catchment_id, model_id)
+  
+  # return the data set and the row id
+  list(
+    data_train = data_train %>% select(-record_id),
+    data_val = data_val %>% select(-record_id),
+    record_id_train = data_train$record_id,
+    record_id_val = data_val$record_id
+  )
+}
 
-
-derive_PQ <- function(data_train, data_val){
-  # This function derives the P and Q value from data_base 
+derive_PQ <- function(data_train, data_val) {
+  # This function derives the P and Q value from data_base
   
   # prepare the data sets in the format required by recosystem
   train_set <- data_memory(
@@ -219,121 +225,115 @@ derive_PQ <- function(data_train, data_val){
   opts$verbose <- F
   r$train(train_val_set, opts = opts)
   
-  c(P,Q) %<-% r$output(out_memory(), out_memory())
+  c(P, Q) %<-% r$output(out_memory(), out_memory())
   
   list(P = P, Q = Q)
 }
 
-
-
-# Derive P and Q ----------------------------------------------------------
-
-i <- 1
-
-c(data_base, data_look_up) %<-% base_look_up_split(train_fold = train_folds[[i]])
-c(data_train, data_val, record_id_train = data_train$record_id, record_id_val) %<-% prepare_modeling_data(data_base)
-# derive P and Q
-c(P, Q) %<-% derive_PQ(data_train, data_val)
-
-# get the catchment_ids for look up experiments
-catchment_id_look_ups <- data_look_up %>% pull(catchment_id) %>% unique() %>% sort()
-catchment_id_bases <- setdiff(1:n_catchments, catchment_id_look_ups)
-
-save(P,Q, train_folds, data_base, data_look_up, file = "./data/temp_look_up.Rda")
-
-
-# Look up -----------------------------------------------------------------
-
-
-load("./data/temp_look_up.Rda")
-
-# set the number of edges evaluated
-n_evaluation <- round(dim(P)[2])
-# set the portion used in training due GA hyperparameter optimization
-train_portion <- 0.8
-
-# Functions
-fn_factory <- function(Q, rating){
-  function(x){
-    # This function computes the predicted 
-    pred <- Rfast::eachrow(Q, x, "*")
-    pred <- Rfast::rowsums(pred)
-    
-    -ModelMetrics::rmse(actual = rating, predicted = pred)
-  }
-}
-
-p_rmse <- function(p, Q, rating){
-  # This function computes the RMSE of predicted ratings of models specified by Q
-  # the target rating is `rating`
-  ModelMetrics::rmse(
-    predicted = p %*% t(Q) %>% as.vector(),
-    actual = rating
+derive_PQ_wrapper <- function(data_base){
+  
+  # further split data_base into data_train and data_val for derive optimal parameters for matrix factorization
+  c(data_train, data_val, record_id_train, record_id_val) %<-% base_further_split(data_base)
+  
+  # derive P and Q
+  c(P, Q) %<-% derive_PQ(data_train, data_val)
+  
+  # output
+  list(
+    P = P,
+    Q = Q,
+    record_id_train = record_id_train, 
+    record_id_val = record_id_val
   )
 }
 
-p_r2 <- function(p, Q, rating){
-  # This function computes the R-squared of predicted ratings of models specified by Q
-  # the target rating is `rating`
-  cor(p %*% t(Q) %>% as.vector(), rating)^2
+fn_factory <- function(Q, rating) {
+  function(x) {
+    # This function computes the predicted
+    pred <- Rfast::eachrow(Q, x, "*")
+    pred <- Rfast::rowsums(pred)
+    
+    - ModelMetrics::rmse(actual = rating, predicted = pred)
+  }
 }
 
-split_Q <- function(Q, n_evaluation, train_portion, catchment_id_look_up){
-  # This function split Q into Q_evaluation, Q_train, Q_val, and Q_test
-  # weights of the links between the look-up catchment and the models associated with Q_evaluation is known
-  # Q_evaluation is further split into Q_train and Q_val for deriving the optimal number of iterations in GA
+p_rmse <- function(p, Q, rating) {
+  # This function computes the RMSE of predicted ratings of models specified by Q
+  # the target rating is `rating`
+  ModelMetrics::rmse(predicted = p %*% t(Q) %>% as.vector(),
+                     actual = rating)
+}
+
+p_r2 <- function(p, Q, rating) {
+  # This function computes the R-squared of predicted ratings of models specified by Q
+  # the target rating is `rating`
+  cor(p %*% t(Q) %>% as.vector(), rating) ^ 2
+}
+
+p_at_k <- function(pred, actual, k = 1) {
+  # compute precision at K
+  sum(pred$model_id[1:k] %in% actual$model_id[1:k]) / k
+}
+
+mean_diff_at_k <- function(pred, actual, k = 1) {
+  # difference in mean ranking
+  mean(pred$rating[1:k]) - mean(actual$rating[1:k])
+}
+
+prepare_Qs_for_look_up  <- function(Q, n_probed, train_portion, catchment_id_look_up){
+  # This function split Q into Q_probed, Q_train, Q_val, and Q_test
+  # weights of the links between the look-up catchment and the models associated with Q_probed is known
+  # Q_probed is further split into Q_train and Q_val for deriving the optimal number of iterations in GA
   # Q_test is the remaining models with unknown weight links with the look-up catchment.
   
   # n_evalution: the number of links between Q and the look-up catchment with known weights
-  # data_look_up is from global env
   
-  model_ind_evaluation <- sample(1:n_instances, n_evaluation) %>%
+  model_id_probed <- sample(1:n_instances, n_probed) %>%
     sort()
   
-  Q_evaluation <- Q[model_ind_evaluation,]
+  Q_probed <- Q[model_id_probed,]
   
-  rating_evaluation <- data_look_up %>%
+  rating_probed <- data_process %>%    # data_process is from global
     filter(catchment_id == catchment_id_look_up,
-           model_id %in% model_ind_evaluation) %>%
+           model_id %in% model_id_probed) %>%
     arrange(model_id) %>%
     pull(rating)
   
   # Q_test and rating_test
-  model_ind_test <- setdiff(1:n_instances, model_ind_evaluation)
-  Q_test <- Q[model_ind_test,]
+  model_id_test <- setdiff(1:n_instances, model_id_probed)
+  Q_test <- Q[model_id_test,]
   rating_test <- data_look_up %>%
     filter(catchment_id == catchment_id_look_up,
-           model_id %in% model_ind_test) %>%
+           model_id %in% model_id_test) %>%
     arrange(model_id) %>%
     pull(rating)
   
   # train and validation split
-  n_train <- round(length(model_ind_evaluation)*train_portion)
+  n_train <- round(length(model_id_probed)*train_portion)
   
-  sample_ind <- sample(seq_along(model_ind_evaluation), size = n_train) %>% sort()
-  model_ind_train <- model_ind_evaluation[sample_ind]
-  model_ind_val <- model_ind_evaluation[-sample_ind]
-  Q_train <- Q[model_ind_train,]
-  Q_val <- Q[model_ind_val,]
+  sample_id <- sample(seq_along(model_id_probed), size = n_train) %>% sort()
+  model_id_train <- model_id_probed[sample_id]
+  model_id_val <- model_id_probed[-sample_id]
+  Q_train <- Q[model_id_train,]
+  Q_val <- Q[model_id_val,]
   rating_train <- data_look_up %>%
     filter(catchment_id == catchment_id_look_up,
-           model_id %in% model_ind_train) %>%
+           model_id %in% model_id_train) %>%
     arrange(model_id) %>%
     pull(rating)
   rating_val <- data_look_up %>%
     filter(catchment_id == catchment_id_look_up,
-           model_id %in% model_ind_val) %>%
+           model_id %in% model_id_val) %>%
     arrange(model_id) %>%
     pull(rating)
   
-
   # output
   list(
-    Q_evaluation = Q_evaluation,
-    rating_evaluation = rating_evaluation,
+    Q_probed = Q_probed,
+    rating_probed = rating_probed,
     Q_test = Q_test,
     rating_test = rating_test,
-    model_ind_test = model_ind_test,
+    model_id_test = model_id_test,
     Q_train = Q_train,
     rating_train = rating_train,
     Q_val = Q_val,
@@ -341,26 +341,19 @@ split_Q <- function(Q, n_evaluation, train_portion, catchment_id_look_up){
   )
 }
 
-
-# iterate over catchment_id_look_ups
-# catchment id used in current experiments
-
-outs <- vector("list", length(catchment_id_look_ups))
-
-for (j in seq_along(catchment_id_look_ups)){
+derive_p <- function(Q, n_probed, train_portion, catchment_id_look_up){
+  # train_portion: the portion used in training during GA hyperparameter optimization
   
-  catchment_id_look_up <- catchment_id_look_ups[[j]]
-  
+  # prepare look up data sets
   c(
-    Q_evaluation, rating_evaluation,
-    Q_test, rating_test, model_ind_test,
+    Q_probed, rating_probed,
+    Q_test, rating_test, model_id_test,
     Q_train, rating_train, 
     Q_val, rating_val
   ) %<-%
-    split_Q(Q, n_evaluation, train_portion, catchment_id_look_up)
+    prepare_Qs_for_look_up(Q, n_probed, train_portion, catchment_id_look_up)
   
-  
-  # get model_ind of the models used in the evaluation and the retrieval experiments
+  # get model_id of the models used in the evaluation and the retrieval experiments
   # run ga with Q_train and rating_train
   fn <- fn_factory(Q_train, rating_train)
   
@@ -395,8 +388,8 @@ for (j in seq_along(catchment_id_look_ups)){
   
   optimal_iter <- which.min(out)
   
-  # run ga with Q_evaluation and rating_evaluation
-  fn <- fn_factory(Q_evaluation, rating_evaluation)
+  # run ga with Q_probed and rating_probed
+  fn <- fn_factory(Q_probed, rating_probed)
   
   GA <-
     ga(
@@ -411,15 +404,17 @@ for (j in seq_along(catchment_id_look_ups)){
       monitor = F
     )
   
-  # output
-  p_look_up <- GA@solution[1,] %>% unname()
+  # estimated p
+  p <- GA@solution[1,] %>% unname()
   
-  pred <- p_look_up %*%
+  # evaluate the quality of p
+  pred <- p %*%
     t(Q_test) %>%
     as.vector()
   
+  # identify top 100 models specified by Q_test and p
   top100_pred <- tibble(
-    model_ind = model_ind_test,
+    model_id = model_id_test,
     rating = pred,
     case = "pred"
   ) %>%
@@ -427,118 +422,86 @@ for (j in seq_along(catchment_id_look_ups)){
     slice(1:100)
   
   top100_actual <- tibble(
-    model_ind = model_ind_test,
+    model_id = model_id_test,
     rating = rating_test,
     case = "actual"
   ) %>%
     arrange(desc(rating)) %>%
     slice(1:100)
   
-  outs[[j]] <- list(
-    p = p_look_up,
-    rmse = p_rmse(p_look_up, Q_test, rating_test),
-    r2 = cor(rating_test, pred)^2,
+  # output
+  list(
+    p = p,
+    rmse = p_rmse(p, Q_test, rating_test),
+    r2 = p_r2(p, Q_test, rating_test),
     top100_actual = top100_actual,
     top100_pred = top100_pred
   )
 }
 
+# Derive P and Q ----------------------------------------------------------
 
+i <- 1
 
+load('./data/temp_look_up.Rda')
 
+# iterate over the train_folds, i.e., repeat the look-up experiment on different splits of the data
+eval_grids <- vector("list", length(train_folds))
+Ps  <- vector("list", length(train_folds))
+Qs  <- vector("list", length(train_folds))
 
-
-
-
-# Plotting ----------------------------------------------------------------
-
-n_evaluation <- 200
-max_rating <- rep(0,33)
-max_rating_lookup <- rep(0,33)
-r2s <- rep(0,33)
-rmses <- rep(0,33)
-rankings <- rep(0,33)
-
-for (i in 1:33){
-  model_ind_evaluation <- sample(1:(n_instances_per_class*n_model_classes), n_evaluation) %>%
-    sort()
-  model_ind_test <- setdiff(1:(n_instances_per_class*n_model_classes), model_ind_evaluation)
+for (i in seq_along(train_folds)){
   
-  Q_evaluation <- Q[model_ind_evaluation,]
-  rating_evaluation <- data_process_lookup %>%
-    filter(catchment_id == catchment_id_lookup[i],
-           model_id %in% model_ind_evaluation) %>%
-    arrange(model_id) %>%
-    pull(rating)
+  # split data set into data_base for estimating P and Q, and data_look_up for look up experiments
+  c(data_base, data_look_up, catchment_id_bases, catchment_id_look_ups) %<-% 
+    base_look_up_split(train_fold = train_folds[[i]])
   
-  fn <- function(x){
+  # derive P and Q
+  c(P, Q, record_id_train, record_id_val) %<-% derive_PQ_wrapper(data_base)
+
+  # n_probed: the numbers of edges evaluated for estimating p
+  
+  eval_grid <- expand_grid(
+    n_probed = round(dim(P)[2]*0.5*1:4), # 0.5, 1, 1.5, and 2 times of the latent dimension
+    catchment_id_look_up = catchment_id_look_ups,
+    out = vector("list", 1)
+  )
+  
+  # iterate over eval_grid
+  for (j in 1:nrow(eval_grid)){
     
-    m1 <- matrix(x, nrow = 1)
-    m2 <- t(Q_evaluation)
+    n_probed <- eval_grid$n_probed[[j]]
+    catchment_id_look_up <- eval_grid$catchment_id_look_up[[j]]
+    train_portion <- 0.8
     
-    pred <- m1%*%m2 %>%
-      as.vector()
-    
-    -ModelMetrics::rmse(actual = rating_evaluation, predicted = pred)
+    # evaluation
+    eval_grid$out[[j]] <- derive_p(Q, n_probed, train_portion, catchment_id_look_up)
   }
   
-  LB <- rep(range(P,na.rm = T)[1]*1.25, dim(P)[2])
-  UB <- rep(range(P,na.rm = T)[2]*1.25, dim(P)[2])
+  eval_grid <- eval_grid %>%
+    mutate(train_fold_id = i)
   
-  GA <- ga(type = "real-valued", fitness = fn, lower = LB, upper = UB, maxiter = 200)
-  
-  P_new_catchment <- GA@solution[1,]
-  
-  # evaluation
-  model_ind_test <- setdiff(1:(n_instances_per_class*n_model_classes), model_ind_evaluation) %>%
-    sort()
-  Q_test<- Q[model_ind_test,]
-  rating_test <- data_process_lookup %>%
-    filter(catchment_id == catchment_id_lookup[i],
-           model_id %in% model_ind_test) %>%
-    arrange(model_id) %>%
-    pull(rating)
-  
-  pred_test <-P_new_catchment %*%
-    t(Q_test) %>%
-    as.vector()
-  rmses[[i]] <- ModelMetrics::rmse(actual = rating_test, pred_test)
-  r2s[[i]] <- cor(rating_test, pred_test)^2
-  #plot(rating_test, pred_test)
-  
-  max_rating[[i]] <- max(rating_test)
-  max_rating_lookup[[i]] <- rating_test[which.max(pred_test)]
-  rankings[[i]] <- rank(rating_test)[which.max(pred_test)]/length(rating_test)
+  # output
+  eval_grids[[i]] <- eval_grid
+  Ps[[i]] <- P
+  Qs[[i]] <- Q
 }
 
-plot(max_rating_lookup, max_rating)
-hist(max_rating_lookup - max_rating)
-sum(max_rating_lookup - max_rating)
+eval_grid <- eval_grids %>%
+  bind_rows()
 
-data_plot <- tibble(
-  max_rating,
-  max_rating_lookup,
-  rankings
-)
+save(Ps, Qs, train_folds, eval_grid, file = "./data/dense_look_up.Rda")
 
-ggplot(data_plot, aes(max_rating_lookup, max_rating)) +
-  geom_point()+
-  theme_bw()+
-  labs(x = "Rating of the model retrived using catchment embeddings",
-       y = "Rating of the best model in the data set")
 
-ggplot(data_plot, aes(rankings * 100))+
-  geom_histogram()+
-  theme_bw()
-
+# Recycle -----------------------------------------------------------------
 
 
 
 # LM experiments ----------------------------------------------------------
 
-data_lm <- Q_evaluation %>%
+data_lm <- Q_probed %>%
   as.data.frame() %>%
-  mutate(rating = rating_evaluation)
+  mutate(rating = rating_probed)
 
 model <- lm(rating ~ . - 1, data = data_lm)
 preds <- predict(model, data_lm)
@@ -546,7 +509,7 @@ plot(preds, data_lm$rating)
 cor(data_lm$rating, preds)^2
 
 
-data_lm_test <- Q[model_ind_test,] %>%
+data_lm_test <- Q[model_id_test,] %>%
   as.data.frame() %>%
   mutate(rating = rating_test)
 preds <- predict(model, data_lm_test)
