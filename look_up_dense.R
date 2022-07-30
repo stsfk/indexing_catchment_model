@@ -441,10 +441,6 @@ derive_p <- function(Q, n_probed, train_portion, catchment_id_look_up){
 
 # Derive P and Q ----------------------------------------------------------
 
-i <- 1
-
-load('./data/temp_look_up.Rda')
-
 # iterate over the train_folds, i.e., repeat the look-up experiment on different splits of the data
 eval_grids <- vector("list", length(train_folds))
 Ps  <- vector("list", length(train_folds))
