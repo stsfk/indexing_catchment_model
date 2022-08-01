@@ -102,7 +102,56 @@ for (i in 1:10){
 stopCluster(cl)
 
 
+# Result analysis ---------------------------------------------------------
+
+load("./data/dense_dist.Rda")
+
+dists <- lapply(dists, function(x) x[lower.tri(x)])
+
+out <- matrix(nrow = 10, ncol = 10)
+
+x_y_pairs <- expand_grid(x=1:10, y=1:10) %>%
+  filter(x < y)
+
+compute_distance_wrapper <- function(i){
+  a <- dists[[x_y_pairs$x[i]]]
+  b <- dists[[x_y_pairs$y[i]]]
+  
+  cor(a,b)
+}
+
+dist <- foreach(i=1:nrow(x_y_pairs)) %do% 
+  compute_distance_wrapper(i) %>%
+  unlist()
+
+x_y_pairs <- x_y_pairs %>%
+  mutate(dist = dist)
+
+x_y_pairs2 <- tibble(
+  x = x_y_pairs$y,
+  y = x_y_pairs$x,
+  dist = x_y_pairs$dist
+)
+
+x_y_pairs <- x_y_pairs %>%
+  rbind(x_y_pairs2)
+
+dist_m <- as.matrix(dcast.data.table(
+  data = as.data.table(x_y_pairs),
+  x ~ y,
+  value.var = "dist",
+  fill = 0
+)[, -1, with = FALSE])
+
+
+dist_m %>%
+  view()
+
+
 # recycle -----------------------------------------------------------------
+
+
+# the various distance functions below are slower or much slower.
 
 compute_distance <- function(x, y, LB, UB, n_samples = 500000){
   # This function computes the expected distance between x and y, where each dimension is scaled by a random vector
