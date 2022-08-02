@@ -127,3 +127,174 @@ temp2 <- temp2 %>%
 write_csv(temp2, "./data/catchment_model_pair.csv")
 
 
+# result analysis ---------------------------------------------------------
+
+data_plot <- read_csv("./data/catchment_model_pair.csv", col_types =  list(col_double()))
+data_plot2 <- read_csv("./data/best_fit.csv", col_types =  list(col_double()), col_names = F) %>%
+  set_names("KGE", "NSE", "RMSE")
+
+NNSE2 <- data_plot %>%
+  bind_cols(data_plot2) %>%
+  group_by(catchment_id) %>%
+  summarise(best_nse = max(NSE)) %>%
+  mutate(NNSE = 1 / (2 - best_nse) * 10) %>%
+  pull(NNSE)
+
+
+
+
+# load sparse data set
+model_index <- read_csv("./data/sparse_index.csv",
+                        col_names = c("model_class", "catchment_id"))
+
+weights <- read_csv("./data/sparse_result.csv",
+                    col_names = c("KGE", "NSE", "RMSE"))
+
+
+n_catchments <- 533
+n_model_classes <- (model_index$model_class %>% unique() %>% length()) 
+
+n_model_instances <- 1000 # n_model_instances
+n_catchment_per_instance <-  nrow(weights)/n_model_classes/n_model_instances # n_catchment_per_instance 
+
+# assign instance_id to model_index data base
+model_index <- model_index %>%
+  group_by(model_class) %>%
+  mutate(instance_id = rep(1:n_model_instances, each = n_catchment_per_instance)) %>%
+  ungroup()
+
+data_raw <- model_index %>%
+  bind_cols(weights) %>%
+  filter(model_class != "m_40_smar_8p_6s") %>% # evaluation errors for "m_40_smar_8p_6s"
+  mutate(
+    model_id = paste(model_class, instance_id, sep = "_"),
+    model_id = factor(model_id, levels = unique(model_id)),
+    model_id = as.integer(model_id) # assign a unique id to each model
+  ) %>%
+  select(model_class, catchment_id, model_id, KGE, NSE, RMSE)
+
+data_sparse <- data_raw %>%
+  mutate(NNSE = 1 / (2 - NSE) * 10) %>%
+  dplyr::select(catchment_id,
+                model_id,
+                NNSE) %>%
+  rename(rating = NNSE) %>%
+  mutate(record_id = 1:n())
+
+
+# load sparse data set
+model_index <- read_csv("./data/sparse_index.csv",
+                        col_names = c("model_class", "catchment_id"))
+
+weights <- read_csv("./data/sparse_result.csv",
+                    col_names = c("KGE", "NSE", "RMSE"))
+
+
+n_catchments <- 533
+n_model_classes <- (model_index$model_class %>% unique() %>% length()) 
+
+n_model_instances <- 1000 # n_model_instances
+n_catchment_per_instance <-  nrow(weights)/n_model_classes/n_model_instances # n_catchment_per_instance 
+
+# assign instance_id to model_index data base
+model_index <- model_index %>%
+  group_by(model_class) %>%
+  mutate(instance_id = rep(1:n_model_instances, each = n_catchment_per_instance)) %>%
+  ungroup()
+
+data_raw <- model_index %>%
+  bind_cols(weights) %>%
+  filter(model_class != "m_40_smar_8p_6s") %>% # evaluation errors for "m_40_smar_8p_6s"
+  mutate(
+    model_id = paste(model_class, instance_id, sep = "_"),
+    model_id = factor(model_id, levels = unique(model_id)),
+    model_id = as.integer(model_id) # assign a unique id to each model
+  ) %>%
+  select(model_class, catchment_id, model_id, KGE, NSE, RMSE)
+
+data_sparse <- data_raw %>%
+  mutate(NNSE = 1 / (2 - NSE) * 10) %>%
+  dplyr::select(catchment_id,
+                model_id,
+                NNSE) %>%
+  rename(rating = NNSE) %>%
+  mutate(record_id = 1:n())
+
+
+# load dense dataset
+
+weights <- read_csv("./data/SM.csv",
+                    col_names = c("KGE", "NSE", "RMSE"))
+
+# 10 model classes in the dense data set
+model_class  <- c(
+  'm_01_collie1_1p_1s',
+  'm_05_ihacres_7p_1s',
+  'm_07_gr4j_4p_2s',
+  'm_13_hillslope_7p_2s',
+  'm_18_simhyd_7p_3s',
+  'm_22_vic_10p_3s',
+  'm_27_tank_12p_4s',
+  'm_28_xinanjiang_12p_4s',
+  'm_34_flexis_12p_5s',
+  'm_37_hbv_15p_5s'
+)
+
+n_catchments <- 533
+n_model_classes <- length(model_class)
+n_model_instances <-  nrow(weights)/n_catchments/n_model_classes # number of instance of each model class
+
+# assign catchment id and model instance id to each row
+catchment_id <- rep(1:n_catchments, each = n_model_instances)
+data_raw <- weights %>%
+  bind_cols(expand_grid(model_class, catchment_id)) %>%
+  mutate(
+    instance_id = rep(1:n_model_instances, n() / n_model_instances),
+    model_id = paste(model_class, instance_id, sep = "_"),
+    model_id = factor(model_id, levels = unique(model_id)),
+    model_id = as.integer(model_id) # assign a unique id to each model
+  ) %>%
+  select(model_class, catchment_id, model_id, KGE, NSE, RMSE)
+
+# normalizing NSE on a scale from 0 to 10
+data_dense <- data_raw %>%
+  mutate(NNSE = 1 / (2 - NSE) * 10) %>%
+  dplyr::select(catchment_id,
+                model_id,
+                NNSE) %>%
+  rename(rating = NNSE) %>%
+  mutate(record_id = 1:n()) # give each row a unique ID
+
+
+# combine
+data_dense <- data_dense %>%
+  group_by(catchment_id) %>%
+  summarise(best = max(rating)) %>%
+  mutate(case = "dense")
+
+
+data_sparse <- data_sparse %>%
+  group_by(catchment_id) %>%
+  summarise(best = max(rating)) %>%
+  mutate(case = "sparse")
+
+
+
+data_plot <- data_sparse %>%
+  rbind(data_dense)
+
+
+
+
+
+data_plot %>%
+  ggplot(aes(best, color = case)) +
+  stat_ecdf(geom = "step")+
+  labs(y = "Cumulative distribution", 
+       x="Model rating")+
+  theme_bw()
+
+
+
+
+
