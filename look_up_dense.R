@@ -506,16 +506,38 @@ load("./data/dense_look_up.Rda")
 
 eval_summary <- eval_grid %>%
   mutate(r2 = map_dbl(out, function(x) x$r2),
-         rmse = map_dbl(out, function(x) x$rmse))
+         rmse = map_dbl(out, function(x) x$rmse)) %>%
+  group_by(probed_ratio) %>%
+  summarise(r2_mean = mean(r2),
+            r2_sd = sd(r2),
+            rmse_mean = mean(rmse),
+            rmse_sd = sd(rmse))
 
-eval_summary$r2 %>% mean() %>% round(2)
-eval_summary$r2 %>% sd() %>% round(3)
 
-eval_summary$rmse %>% mean() %>% round(2)
-eval_summary$rmse %>% sd() %>% round(2)
+eval_summary %>% transmute(
+  r2 = paste0(
+    round(r2_mean, 3),
+    "(",
+    formatC(r2_sd, format = "e", digits = 2),
+    ")"
+  ),
+  rmse = paste0(
+    round(rmse_mean, 3),
+    "(",
+    formatC(rmse_sd, format = "e", digits = 2),
+    ")"
+  )
+) %>%
+  view()
 
 
-eval_grid %>% mutate(r2 = map_dbl(out, function(x) x$top100_actual$rating %>% mean()))
+
+
+
+
+
+eval_grid %>% 
+  mutate(r2 = map_dbl(out, function(x) x$top100_actual$rating %>% mean()))
 
 
 
