@@ -129,18 +129,18 @@ write_csv(temp2, "./data/catchment_model_pair.csv")
 
 # result analysis ---------------------------------------------------------
 
-data_plot <- read_csv("./data/catchment_model_pair.csv", col_types =  list(col_double()))
-data_plot2 <- read_csv("./data/best_fit.csv", col_types =  list(col_double()), col_names = F) %>%
+
+# sparse recomemded model
+catchment_model_pair <- read_csv("./data/catchment_model_pair.csv", col_types =  list(col_double()))
+sparse_best <- read_csv("./data/best_fit.csv", col_types =  list(col_double()), col_names = F) %>%
   set_names("KGE", "NSE", "RMSE")
 
-NNSE2 <- data_plot %>%
-  bind_cols(data_plot2) %>%
+sparse_best <- catchment_model_pair %>%
+  bind_cols(sparse_best) %>%
   group_by(catchment_id) %>%
-  summarise(best_nse = max(NSE)) %>%
-  mutate(NNSE = 1 / (2 - best_nse) * 10) %>%
-  pull(NNSE)
-
-
+  summarise(best = max(NSE)) %>%
+  mutate(best = 1 / (2 - best) * 10,
+         case = "sparse_best")
 
 
 # load sparse data set
@@ -279,12 +279,9 @@ data_sparse <- data_sparse %>%
   mutate(case = "sparse")
 
 
-
 data_plot <- data_sparse %>%
-  rbind(data_dense)
-
-
-
+  rbind(data_dense) %>%
+  rbind(sparse_best)
 
 
 data_plot %>%
