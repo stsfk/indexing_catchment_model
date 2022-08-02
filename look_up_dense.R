@@ -497,7 +497,25 @@ save(Ps, Qs, train_folds, eval_grid, file = "./data/dense_look_up.Rda")
 # stop
 stopCluster(cl)
 
-# Recycle -----------------------------------------------------------------
+
+
+# Analysis ----------------------------------------------------------------
+
+load("./data/dense_look_up.Rda")
+
+
+eval_summary <- eval_grid %>%
+  mutate(r2 = map_dbl(out, function(x) x$r2),
+         rmse = map_dbl(out, function(x) x$rmse))
+
+eval_summary$r2 %>% mean() %>% round(2)
+eval_summary$r2 %>% sd() %>% round(3)
+
+eval_summary$rmse %>% mean() %>% round(2)
+eval_summary$rmse %>% sd() %>% round(2)
+
+
+eval_grid %>% mutate(r2 = map_dbl(out, function(x) x$top100_actual$rating %>% mean()))
 
 
 
