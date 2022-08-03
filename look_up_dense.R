@@ -527,7 +527,121 @@ eval_summary %>% transmute(
     formatC(rmse_sd, format = "e", digits = 2),
     ")"
   )
-) %>%
+)
+
+
+# compare top retrieved model with actual top models
+
+get_predicted_model_rating <- function(catchment_id_look_up, out){
+  predicted_model_rating <- data_process %>%
+    filter(catchment_id == catchment_id_look_up,
+           model_id %in% out$top100_pred$model_id) %>%
+    select(model_id, actual_rating=rating)
+  
+  out$top100_pred %>% 
+    left_join(predicted_model_rating, by = "model_id") %>% # to keep the predicted model ranking
+    pull(actual_rating)
+}
+
+eval_grid_expand <- eval_grid %>%
+  mutate(
+    predicted_model_rating = map2(catchment_id_look_up, out, get_predicted_model_rating)
+  ) 
+
+eval_grid_expand %>%
+  mutate(
+    actual_best_model_rating = map_dbl(out, function(x) x$top100_actual$rating %>% max),
+    hit1 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1]),
+    hit10 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1:10]),
+    hit25 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1:25]),
+    hit100 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id),
+    diff1 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-x[1]),
+    diff10 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:10])),
+    diff25 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:25])),
+    diff100 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:100])),
+    diff1p = diff1/actual_best_model_rating*100,
+    diff10p = diff10/actual_best_model_rating*100,
+    diff25p = diff25/actual_best_model_rating*100,
+    diff100p = diff100/actual_best_model_rating*100
+    ) %>%
+  group_by(probed_ratio) %>%
+  summarise(
+    hit1 = mean(hit1),
+    hit10 = mean(hit10),
+    hit25 = mean(hit25),
+    hit100 = mean(hit100),
+    diff1_sd = sd(diff1),
+    diff10_sd = sd(diff10),
+    diff25_sd = sd(diff25),
+    diff100_sd = sd(diff100),
+    diff1 = mean(diff1),
+    diff10 = mean(diff10),
+    diff25 = mean(diff25),
+    diff100 = mean(diff100),
+    diff1p_sd = sd(diff1p),
+    diff10p_sd = sd(diff10p),
+    diff25p_sd = sd(diff25p),
+    diff100p_sd = sd(diff100p),
+    diff1p = mean(diff1p),
+    diff10p = mean(diff10p),
+    diff25p = mean(diff25p),
+    diff100p = mean(diff100p),
+    ) %>% 
+  transmute(
+      probed_ratio = probed_ratio,
+      hit1 = formatC(hit1, format = "f", digits = 3),
+      hit10 = formatC(hit10, format = "f", digits = 3),
+      hit25 = formatC(hit25, format = "f", digits = 3),
+      hit100 = formatC(hit100, format = "f", digits = 3),
+      diff1 = paste0(
+        formatC(diff1, format = "f", digits = 3),
+        "(",
+        formatC(diff1_sd, format = "f", digits = 3),
+        ")"
+      ),
+      diff10 = paste0(
+        formatC(diff10, format = "f", digits = 3),
+        "(",
+        formatC(diff10_sd, format = "f", digits = 3),
+        ")"
+      ),
+      diff25 = paste0(
+        formatC(diff25, format = "f", digits = 3),
+        "(",
+        formatC(diff25_sd, format = "f", digits = 3),
+        ")"
+      ),
+      diff100 = paste0(
+        formatC(diff100, format = "f", digits = 3),
+        "(",
+        formatC(diff100_sd, format = "f", digits = 3),
+        ")"
+      ),
+      diff1p = paste0(
+        formatC(diff1p, format = "f", digits = 3),
+        "(",
+        formatC(diff1p_sd, format = "f", digits = 3),
+        ")"
+      ),
+      diff10p = paste0(
+        formatC(diff10p, format = "f", digits = 3),
+        "(",
+        formatC(diff10p_sd, format = "f", digits = 3),
+        ")"
+      ),
+      diff25p = paste0(
+        formatC(diff25p, format = "f", digits = 3),
+        "(",
+        formatC(diff25p_sd, format = "f", digits = 3),
+        ")"
+      ),
+      diff100p = paste0(
+        formatC(diff100p, format = "f", digits = 3),
+        "(",
+        formatC(diff100p_sd, format = "f", digits = 3),
+        ")"
+      )
+    ) %>%
   view()
 
 
@@ -536,8 +650,7 @@ eval_summary %>% transmute(
 
 
 
-eval_grid %>% 
-  mutate(r2 = map_dbl(out, function(x) x$top100_actual$rating %>% mean()))
+
 
 
 
