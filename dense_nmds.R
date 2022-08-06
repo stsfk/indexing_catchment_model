@@ -67,7 +67,7 @@ NMDS_result <-
 stressplot(NMDS_result)
 plot(NMDS_result)
 
-
+save(NMDS_result, file = "NMDS_result.Rda")
 # Plotting ----------------------------------------------------------------
 
 data_plot <- tibble(
