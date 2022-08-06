@@ -75,17 +75,17 @@ data_plot <- tibble(
   y = NMDS_result$points[,2],
   DIVISION = stri_trans_totitle(catchment_points$DIVISION)
 )
-
-cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+#F0E442
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#A6761D", "#0072B2", "#D55E00", "#CC79A7")
 
 p1 <- ggplot(data_plot, aes(x,y, color = DIVISION))+
-  geom_point(size = 0.7, shape = 21)+
+  geom_point(size = 0.75, shape = 21)+
   scale_color_manual(values=cbPalette)+
   theme_bw()+
   labs(x = "NMDS Axis 1",
        y = "NMDS Axis 2",
        color = "Physiographic regions")+
-  theme_bw(9)+
+  theme_bw(10)+
   theme(
     legend.position = "right",
     legend.key.height = unit(0.16, "inches"),
@@ -93,17 +93,17 @@ p1 <- ggplot(data_plot, aes(x,y, color = DIVISION))+
   )
 
 p2 <- ggplot(data_plot, aes(x,y, color = DIVISION))+
-  geom_point(size = 0.7, shape = 21)+
+  geom_point(size = 0.75, shape = 21)+
   scale_color_manual(values=cbPalette)+
   facet_wrap(~DIVISION, ncol = 4)+
   labs(x = "NMDS Axis 1",
        y = "NMDS Axis 2")+
-  theme_bw(base_size = 9)+
+  theme_bw(base_size = 10)+
   theme(
     legend.position = "none",
     strip.background = element_rect(fill = "grey80",color = NA),
     panel.border = element_blank(),
-    panel.background = element_rect(fill = "grey95")
+    panel.background = element_rect(fill = "grey96")
   )
 
 plot_grid(
