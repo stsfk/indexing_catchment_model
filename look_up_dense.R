@@ -503,6 +503,9 @@ stopCluster(cl)
 
 load("./data/dense_look_up.Rda")
 
+catchment_lookup_groups <- lapply(train_folds,
+                                  function(x)
+                                    data_process[-x, ] %>% pull(catchment_id) %>% unique())
 
 eval_summary <- eval_grid %>%
   mutate(r2 = map_dbl(out, function(x) x$r2),
@@ -549,6 +552,12 @@ eval_grid_expand <- eval_grid %>%
   ) 
 
 eval_grid_expand %>%
+  mutate(catchment_group = map_dbl(catchment_id_look_up, function(y) which(
+    sapply(catchment_lookup_groups, function(x)
+      y %in% x)
+  )))
+
+eval_grid_expand %>%
   mutate(
     actual_best_model_rating = map_dbl(out, function(x) x$top100_actual$rating %>% max),
     hit1 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1]),
@@ -564,35 +573,59 @@ eval_grid_expand %>%
     diff25p = diff25/actual_best_model_rating*100,
     diff100p = diff100/actual_best_model_rating*100
     ) %>%
-  group_by(probed_ratio) %>%
+  group_by(train_fold_id,probed_ratio) %>%
   summarise(
     hit1 = mean(hit1),
     hit10 = mean(hit10),
-    hit25 = mean(hit25),
+    hit100 = mean(hit100),
+    diff1 = mean(diff1),
+    diff10 = mean(diff10),
+    diff100 = mean(diff100),
+    diff1p = mean(diff1p),
+    diff10p = mean(diff10p),
+    diff100p = mean(diff100p),
+  ) %>%
+  group_by(probed_ratio) %>%
+  summarise(
+    hit1_sd = sd(hit1),
+    hit10_sd = sd(hit10),
+    hit100_sd = sd(hit100),
+    hit1 = mean(hit1),
+    hit10 = mean(hit10),
     hit100 = mean(hit100),
     diff1_sd = sd(diff1),
     diff10_sd = sd(diff10),
-    diff25_sd = sd(diff25),
     diff100_sd = sd(diff100),
     diff1 = mean(diff1),
     diff10 = mean(diff10),
-    diff25 = mean(diff25),
     diff100 = mean(diff100),
     diff1p_sd = sd(diff1p),
     diff10p_sd = sd(diff10p),
-    diff25p_sd = sd(diff25p),
     diff100p_sd = sd(diff100p),
     diff1p = mean(diff1p),
     diff10p = mean(diff10p),
-    diff25p = mean(diff25p),
     diff100p = mean(diff100p),
     ) %>% 
   transmute(
       probed_ratio = probed_ratio,
-      hit1 = formatC(hit1, format = "f", digits = 3),
-      hit10 = formatC(hit10, format = "f", digits = 3),
-      hit25 = formatC(hit25, format = "f", digits = 3),
-      hit100 = formatC(hit100, format = "f", digits = 3),
+      hit1 = paste0(
+        formatC(hit1, format = "f", digits = 3),
+        "(",
+        formatC(hit1_sd, format = "f", digits = 3),
+        ")"
+      ),
+      hit10 = paste0(
+        formatC(hit10, format = "f", digits = 3),
+        "(",
+        formatC(hit10_sd, format = "f", digits = 3),
+        ")"
+      ),
+      hit100 = paste0(
+        formatC(hit100, format = "f", digits = 3),
+        "(",
+        formatC(hit100_sd, format = "f", digits = 3),
+        ")"
+      ),
       diff1 = paste0(
         formatC(diff1, format = "f", digits = 3),
         "(",
@@ -603,12 +636,6 @@ eval_grid_expand %>%
         formatC(diff10, format = "f", digits = 3),
         "(",
         formatC(diff10_sd, format = "f", digits = 3),
-        ")"
-      ),
-      diff25 = paste0(
-        formatC(diff25, format = "f", digits = 3),
-        "(",
-        formatC(diff25_sd, format = "f", digits = 3),
         ")"
       ),
       diff100 = paste0(
@@ -627,12 +654,6 @@ eval_grid_expand %>%
         formatC(diff10p, format = "f", digits = 3),
         "(",
         formatC(diff10p_sd, format = "f", digits = 3),
-        ")"
-      ),
-      diff25p = paste0(
-        formatC(diff25p, format = "f", digits = 3),
-        "(",
-        formatC(diff25p_sd, format = "f", digits = 3),
         ")"
       ),
       diff100p = paste0(
