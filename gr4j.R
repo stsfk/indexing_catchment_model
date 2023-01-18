@@ -60,17 +60,36 @@ get_catchment_gof <- function(selected_catchment_id, paraset){
                                  RunOptions = RunOptions, VarObs = "Q", Obs = BasinObs$Qmm[Ind_Run])
   
   
-  out <- vector("double", nrow(paraset)) * NA
-  for (i in 1:nrow(paraset)){
+  OutputsCrit_wrapper <- function(i){
     Param = paraset[i,]
     
     OutputsModel <- RunModel_GR4J(InputsModel = InputsModel, RunOptions = RunOptions, Param = Param)
     OutputsCrit <- ErrorCrit(InputsCrit = InputsCrit, OutputsModel = OutputsModel, verbose = FALSE)
-    out[[i]] = OutputsCrit$CritValue
+    OutputsCrit$CritValue
   }
   
-  out
+  foreach(x=1:nrow(paraset)) %dopar%
+    OutputsCrit_wrapper(x) %>%
+    unlist()
 }
+
+
+paraset <- lapply(1:100000, function(x) random_para_gen()) %>%
+  unlist() %>%
+  matrix(ncol = 4, byrow = T)
+
+start_time <- Sys.time()
+out <- get_catchment_gof("01022500", paraset)
+Sys.time() - start_time
+
+out %>% range()
+
+
+
+
+
+
+
 
 catchment_ids <- data_process$catchment_id %>% unique()
 
