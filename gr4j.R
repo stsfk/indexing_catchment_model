@@ -108,7 +108,7 @@ for (i in 1:nrow(results)){
   selected_catchment_id <- results$catchment_id[[i]]
   paras <- paraset[results$para_ids[[i]],]
   
-  results$out[[i]] <- get_catchment_gof(selected_catchment_id, paraset)
+  results$out[[i]] <- get_catchment_gof(selected_catchment_id, paras)
 }
 
 results <-results %>% unnest(out) %>%
