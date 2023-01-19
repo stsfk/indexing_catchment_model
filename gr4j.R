@@ -81,76 +81,40 @@ get_catchment_gof <- function(selected_catchment_id, paraset){
 
 # Processing --------------------------------------------------------------
 
+n_paras <- 1000000
+sample_frac <- 0.05
+
 # generate data
 
-paraset <- lapply(1:20000, function(x) random_para_gen()) %>%
+paraset <- lapply(1:n_paras, function(x) random_para_gen()) %>%
   unlist() %>%
   matrix(ncol = 4, byrow = T)
 
-catchment_ids <- data_process$catchment_id %>% unique()
-
-results <- tibble(
-  catchment_id = catchment_ids,
-  out = vector("list", 1)
-)
+results <- expand_grid(catchment_id = data_process$catchment_id %>% unique(),
+            para_id = 1:n_paras) %>%
+  group_by(para_id)%>%
+  sample_frac(sample_frac) %>%
+  ungroup() %>% 
+  group_by(catchment_id) %>%
+  summarise(para_ids = list(para_id)) %>%
+  mutate(out = vector("list", 1))
 
 for (i in 1:nrow(results)){
-  selected_catchment_id = catchment_ids[[i]]
+  
+  selected_catchment_id <- results$catchment_id[[i]]
+  paras <- paraset[results$para_ids[[i]],]
+  
   results$out[[i]] <- get_catchment_gof(selected_catchment_id, paraset)
 }
 
 results <-results %>% unnest(out) %>%
   mutate(rating = 1 / (2 - nse) * 10) %>%
   dplyr::select(catchment_id,
-                para_id,
+                model_id = para_id,
                 rating) %>%
   mutate(record_id = 1:n()) # give each row a unique ID
 
-stopCluster(cl)
-
-# matrix factorization
-
-
-
-data_train <- tibble(
-  user_index = factor(results$catchment_id) %>% as.numeric(),
-  item_index = results$para_id,
-  rating = results$rating
-)
-
-train_set <- data_memory(
-  user_index = data_train$user_index,
-  item_index = data_train$item_index,
-  rating = data_train$rating,
-  index1 = T
-)
-
-r = Reco()
-
-opts = r$tune(train_set, opts = list(dim = c(50), lrate = c(0.01),
-                                     costp_l1 = 0.01, costq_l1 = 0.01,
-                                     costp_l2 = 0, costq_l2 = 0,
-                                     nthread = 10, niter = 200))
-opts
-
-
-r$train(
-  train_set,
-  opts = list(
-    dim = 100,
-    costp_l1 = 0.01,
-    costp_l2 = 0,
-    costq_l1 = 0.01,
-    costq_l2 = 0,
-    lrate = 0.005,
-    niter = 100,
-    verbose = F,
-    nthread = 10
-  )
-)
-
-cor(r$predict(train_set), data_train$rating)^2
-
+# saving results
 save(paraset, results, file = "./data/gr4j_test.Rda")
 
 # Stop --------------------------------------------------------------------
