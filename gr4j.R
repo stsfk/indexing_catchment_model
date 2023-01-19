@@ -83,7 +83,7 @@ get_catchment_gof <- function(selected_catchment_id, paraset){
 
 # generate data
 
-paraset <- lapply(1:1000, function(x) random_para_gen()) %>%
+paraset <- lapply(1:20000, function(x) random_para_gen()) %>%
   unlist() %>%
   matrix(ncol = 4, byrow = T)
 
@@ -151,6 +151,7 @@ r$train(
 
 cor(r$predict(train_set), data_train$rating)^2
 
+save(paraset, results, file = "./data/gr4j_test.Rda")
 
 # Stop --------------------------------------------------------------------
 
