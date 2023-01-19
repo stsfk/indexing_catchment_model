@@ -9,6 +9,10 @@ pacman::p_load(tidyverse,
                recosystem)
 
 
+# seed --------------------------------------------------------------------
+
+set.seed(1234)
+
 # Parallel setting --------------------------------------------------------
 
 nthread <- detectCores()
