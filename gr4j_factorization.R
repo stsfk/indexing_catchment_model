@@ -27,7 +27,6 @@ catchment_ids <- results$catchment_id %>% unique()
 
 # normalizing NSE on a scale from 0 to 10
 data_process <- results %>%
-  rename(model_id = para_id) %>%
   mutate(catchment_id = factor(catchment_id, levels = catchment_ids) %>% as.numeric()) 
 
 
@@ -175,7 +174,7 @@ factorization_wrapper <- function(frac = 1) {
   
   # statistical design 
   des <- generateDesign(
-    n = 5 * getNumberOfParameters(obj_fun),
+    n = 2 * getNumberOfParameters(obj_fun),
     par.set = getParamSet(obj_fun),
     fun = lhs::randomLHS
   )
@@ -184,7 +183,7 @@ factorization_wrapper <- function(frac = 1) {
   
   # set number of generation
   control <- makeMBOControl() %>%
-    setMBOControlTermination(., iters = 100 - 5 * getNumberOfParameters(obj_fun))
+    setMBOControlTermination(., iters = 20 - 2 * getNumberOfParameters(obj_fun))
   
   # run Bayesian optimization 
   run <- mbo(
@@ -230,7 +229,7 @@ eval_grid <- expand_grid(
   r2 = 0,
   rmse = 0,
   out = vector("list",1),
-  repeats = c(1:10)
+  repeats = c(1:1)
 )
 
 sta_time <- Sys.time()
@@ -241,7 +240,7 @@ for (i in 1:nrow(eval_grid)){
   # check if r2 is NA; if so, run matrix factorization again
   okay_result <- FALSE
   while (!okay_result){
-    temp <- factorization_wrapper(frac = 0.05)
+    temp <- factorization_wrapper(frac = 1)
     
     if (!is.na(temp$r2)){
       okay_result <- TRUE
