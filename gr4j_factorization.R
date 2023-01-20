@@ -18,15 +18,13 @@ nthread <- 10 # number of CPU thread
 
 # data --------------------------------------------------------------------
 
-load("./data/gr4j_test.Rda")
+load("./data/gr4j_test2.Rda")
 
 catchment_ids <- results$catchment_id %>% unique()
 
 # normalizing NSE on a scale from 0 to 10
 data_process <- results %>%
-  mutate(catchment_id = factor(catchment_id, levels = catchment_ids) %>% as.numeric()) %>%
-  rename(model_id = para_id)
-
+  mutate(catchment_id = factor(catchment_id, levels = catchment_ids) %>% as.numeric()) 
 
 # Functions ---------------------------------------------------------------
 
@@ -238,7 +236,7 @@ for (i in 1:nrow(eval_grid)){
   # check if r2 is NA; if so, run matrix factorization again
   okay_result <- FALSE
   while (!okay_result){
-    temp <- factorization_wrapper(frac = 0.05)
+    temp <- factorization_wrapper(frac = 1)
     
     if (!is.na(temp$r2)){
       okay_result <- TRUE
