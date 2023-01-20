@@ -85,7 +85,7 @@ get_catchment_gof <- function(selected_catchment_id, paraset){
 
 # Processing --------------------------------------------------------------
 
-n_paras <- 1000000
+n_paras <- 100000
 sample_frac <- 0.05
 
 # generate data
