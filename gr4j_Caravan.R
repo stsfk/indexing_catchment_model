@@ -26,7 +26,7 @@ clusterEvalQ(cl, library(tidyverse))
 
 # Data --------------------------------------------------------------------
 
-data_raw <- read_csv("./data/CAMELS_US.csv")
+data_raw <- read_csv("./data/Caravan/data_all_w_missing.csv")
 
 data_process <- data_raw %>%
   transmute(

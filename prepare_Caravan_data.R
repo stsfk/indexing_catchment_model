@@ -5,22 +5,36 @@ if (!require("pacman")) {
 pacman::p_load(
   tidyverse,
   lubridate,
-  zeallot
+  zeallot,
+  USAboundaries,
+  USAboundariesData,
+  sf
 )
 
 
 # Read time series data ---------------------------------------------------
 
+contiguous_us <- us_states() %>% filter(!(name %in% c("Alaska", "Hawaii", "Puerto Rico"))) %>% st_union()
+
+not_us_catchments <- st_read("./data/Caravan/caravan_not_us_catchments.shp") %>% pull(gauge_id)
+
+
 # filter out catchments contained in CAMELS
-camels_catchment_ids <- read_delim("./data/CAMELS_Knoben/camels_name.txt", delim = ";") %>%
-  pull(gauge_id)
 
 collection_names <- dir("./data/Caravan/timeseries/csv/")
 ts_filename <- lapply(collection_names, function(x) paste0("./data/Caravan/timeseries/csv/", x)) %>%
   lapply(dir)
 
+all_catchments <- lapply(collection_names, function(x) paste0("./data/Caravan/timeseries/csv/", x)) %>%
+  lapply(dir) %>%
+  unlist() %>%
+  str_sub(1, -5)
+
+(not_us_catchments %in% all_catchments) %>% sum() - length(not_us_catchments) # names of the shape file matches
+
+
 data_ts <- tibble(
-  file_name = unlist(ts_filename),
+  file_name = paste0(not_us_catchments, ".csv"), # read only catchment not in the us
   collection_name = str_extract(file_name, ".*(?=[_])"),
   catchment_id = str_extract(file_name, "(?<=[_]).*(?=[\\.])"),
   path = paste0(
@@ -29,18 +43,22 @@ data_ts <- tibble(
     '/',
     file_name),
   data = vector("list", 1)
-) %>%
-  filter(!(catchment_id %in% camels_catchment_ids))
+) 
 
-data_ts %>% count(collection_name)
+data_ts %>% count(collection_name) # num of catchments per collection
 
-n_catchment <- unlist(ts_filename) %>% length()
+data_ts %>% count(catchment_id) %>% arrange(desc(n)) # catchment 208009 and 27001 have the same name
 
+data_ts %>%
+  filter(catchment_id %in% c("208009", "27001")) # not the same catchments, just the same name
+
+# read data
 data_ts <- data_ts %>%
   mutate(data = map(path, read_csv, show_col_types = FALSE))
 
 data_ts <- data_ts %>%
   select(-file_name)
+
 
 # Filtering meteorological forcing  ---------------------------------------
 
@@ -125,10 +143,12 @@ data_process <- data_process %>%
 # all the forcing data is available, some of the flow data is missing
 # catchments with missing Q records is stored in `incomplete_catchments`
 
-minimal_required_Q_length = 365*5
+minimal_required_Q_length = 365*10
 
-incomplete_catchment_train <- data_process %>%
-  filter(date < ymd("2001-01-01")) %>%
+
+incomplete_catchments <- data_process %>%
+  filter(date >= ymd("1989-01-01"),
+         date <= ymd("2010-12-31")) %>%
   group_by(catchment_id) %>%
   summarise(data = list(tibble(Q))) %>%
   mutate(
@@ -139,84 +159,19 @@ incomplete_catchment_train <- data_process %>%
   filter(n_complete_record < minimal_required_Q_length) %>%
   pull(catchment_id)
 
-incomplete_catchment_val <- data_process %>%
-  filter(date > ymd("2000-12-31"),
-         date < ymd("2011-01-01")) %>%
-  group_by(catchment_id) %>%
-  summarise(data = list(tibble(Q))) %>%
-  mutate(
-    n_complete_record = map_dbl(
-      data, function(x) complete.cases(x) %>% sum()
-    )
-  ) %>%
-  filter(n_complete_record < minimal_required_Q_length) %>%
-  pull(catchment_id)
-
-incomplete_catchment_test <- data_process %>%
-  filter(date > ymd("2010-12-31")) %>%
-  group_by(catchment_id) %>%
-  summarise(data = list(tibble(Q))) %>%
-  mutate(
-    n_complete_record = map_dbl(
-      data, function(x) complete.cases(x) %>% sum()
-    )
-  ) %>%
-  filter(n_complete_record < minimal_required_Q_length) %>%
-  pull(catchment_id)
-
-incomplete_catchments <-
-  c(incomplete_catchment_train,
-    incomplete_catchment_test,
-    incomplete_catchment_val) %>%
-  unique()
 
 data_process %>%
-  filter(!(catchment_id %in% incomplete_catchments)) %>% pull(catchment_id) %>% unique() %>% length()
+  filter(!(catchment_id %in% incomplete_catchments)) %>% pull(catchment_id) %>% unique() %>% length() # 2116 catchments
 
 data_process <- data_process %>%
-  filter(!(catchment_id %in% incomplete_catchments))
+  filter(!(catchment_id %in% incomplete_catchments)) %>%
+  filter(date >= ymd("1989-01-01"),
+         date <= ymd("2010-12-31"))
 
-# 2346 catchments left
-
-# Split the data ----------------------------------------------------------
-
-# Q until 2011-01-01 is used for training and validation
-data_train_val <- data_process %>% 
-  filter(date < ymd("2011-01-01"))
-
-data_train_val %>% count(catchment_id) %>% pull(n) %>% unique() # length = 10956
-
-# Q until 2001-01-01 is used for training
-data_train <- data_process %>% 
-  filter(date < ymd("2001-01-01"))
-
-data_train %>% count(catchment_id) %>% pull(n) %>% unique() # length = 7304
-
-# Q from 2001-01-01 to 2010-12-31 is used for validation, forcing from 2000-01-02 is used
-data_val <- data_process %>% 
-  filter(date > ymd("2000-01-01"), date < ymd("2011-01-01"))
-
-data_val %>% count(catchment_id) %>% pull(n) %>% unique() # length = 4017
-
-# Q from 2011-01-01 is used for testing, forcing from 2010-01-01 is used
-data_test <- data_process %>% 
-  filter(date > ymd("2009-12-31"))
-
-data_test %>% count(catchment_id) %>% pull(n) %>% unique() # length = 4017
-
-# All the data
-data_process %>% count(catchment_id) # length = 14608
-
-# data range
-
-# data_train_val$date %>% range() # from "1981-01-02" to "2010-12-31", with the first year for warm-up only
-# data_train$date %>% range() # from "1981-01-02" to "2000-12-31", with the first year for warm-up only
-# data_val$date %>% range() # from "2000-01-02" to "2010-12-31", with the first year for warm-up only
-# data_test$date %>% range() # from "2010-01-01" to "2020-12-30", with the first year for warm-up only
+# 2116 catchments left
 
 # save data ---------------------------------------------------------------
 
 data_process %>%
   arrange(catchment_id, date) %>%
-  select(P:Q) %>%
   write_csv(file = "./data/Caravan/data_all_w_missing.csv")
