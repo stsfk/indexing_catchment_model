@@ -54,8 +54,8 @@ get_catchment_gof <- function(selected_catchment_id, paraset){
   InputsModel <- CreateInputsModel(FUN_MOD = RunModel_GR4J, DatesR = BasinObs$DatesR,
                                    Precip = BasinObs$P, PotEvap = BasinObs$E)
   
-  Ind_Run <- seq(which(format(BasinObs$DatesR, format = "%Y-%m-%d") == "1988-10-01"), 
-                 which(format(BasinObs$DatesR, format = "%Y-%m-%d") == "1998-09-30"))
+  Ind_Run <- seq(which(format(BasinObs$DatesR, format = "%Y-%m-%d") == "1990-01-01"), 
+                 which(format(BasinObs$DatesR, format = "%Y-%m-%d") == "2010-12-31"))
   
   RunOptions <- CreateRunOptions(FUN_MOD = RunModel_GR4J,
                                  InputsModel = InputsModel, IndPeriod_Run = Ind_Run,
@@ -119,7 +119,7 @@ results <-results %>% unnest(out) %>%
   mutate(record_id = 1:n()) # give each row a unique ID
 
 # saving results
-save(paraset, results, file = "./data/gr4j_test.Rda")
+save(paraset, results, file = "./data/gr4j_caravan.Rda")
 
 # Stop --------------------------------------------------------------------
 
