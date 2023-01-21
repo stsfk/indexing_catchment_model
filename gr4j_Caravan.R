@@ -28,6 +28,8 @@ clusterEvalQ(cl, library(tidyverse))
 
 data_raw <- read_csv("./data/Caravan/data_all_w_missing.csv")
 
+data_raw$PET[data_raw$PET < 0] = 0
+
 data_process <- data_raw %>%
   transmute(
     catchment_id = catchment_id,
@@ -45,7 +47,7 @@ random_para_gen <- function(n_para = 4, LB = c(1, -10, 1, 1), UB = c(2000, 15, 3
   runif(n_para) * (UB - LB) + LB
 }
 
-get_catchment_gof <- function(selected_catchment_id, paraset){
+get_catchment_gof <- function(selected_catchment_id, selected_para_ids, selected_paras){
   
   # subsetting by catchment
   BasinObs <- data_process %>%
@@ -66,19 +68,19 @@ get_catchment_gof <- function(selected_catchment_id, paraset){
   
   
   OutputsCrit_wrapper <- function(i){
-    Param = paraset[i,]
+    Param = selected_paras[i,]
     
     OutputsModel <- RunModel_GR4J(InputsModel = InputsModel, RunOptions = RunOptions, Param = Param)
     OutputsCrit <- ErrorCrit(InputsCrit = InputsCrit, OutputsModel = OutputsModel, verbose = FALSE)
     OutputsCrit$CritValue
   }
   
-  out <- foreach(x=1:nrow(paraset)) %dopar%
+  out <- foreach(x=1:nrow(selected_paras)) %dopar%
     OutputsCrit_wrapper(x) %>%
     unlist()
   
   tibble(
-    para_id = 1:nrow(paraset),
+    para_id = selected_para_ids,
     nse = out
   )
 }
@@ -90,7 +92,7 @@ sample_frac <- 0.05
 
 # generate data
 
-paraset <- lapply(1:n_paras, function(x) random_para_gen()) %>%
+paras <- lapply(1:n_paras, function(x) random_para_gen()) %>%
   unlist() %>%
   matrix(ncol = 4, byrow = T)
 
@@ -106,9 +108,10 @@ results <- expand_grid(catchment_id = data_process$catchment_id %>% unique(),
 for (i in 1:nrow(results)){
   
   selected_catchment_id <- results$catchment_id[[i]]
-  paras <- paraset[results$para_ids[[i]],]
+  selected_para_ids <- results$para_ids[[i]]
+  selected_paras <- paras[selected_para_ids,]
   
-  results$out[[i]] <- get_catchment_gof(selected_catchment_id, paras)
+  results$out[[i]] <- get_catchment_gof(selected_catchment_id, selected_para_ids, selected_paras)
 }
 
 results <-results %>% unnest(out) %>%
@@ -119,7 +122,7 @@ results <-results %>% unnest(out) %>%
   mutate(record_id = 1:n()) # give each row a unique ID
 
 # saving results
-save(paraset, results, file = "./data/gr4j_caravan.Rda")
+save(paras, results, file = "./data/gr4j_carvan.Rda")
 
 # Stop --------------------------------------------------------------------
 
