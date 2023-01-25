@@ -78,7 +78,7 @@ prepare_modeling_data <-
     )
   }
 
-factorization_wrapper <- function(frac = 1) {
+factorization_wrapper <- function(i, frac = 1) {
   # splitting
   c(data_train,
     data_val,
@@ -210,15 +210,17 @@ factorization_wrapper <- function(frac = 1) {
                              predicted = pred_rvec)
   
   # outputting
-  c(P,Q) %<-% r$output(out_memory(), out_memory())
+  # c(P,Q) %<-% r$output(out_memory(), out_memory())
+  P_file = out_file(paste0("./data/mat_P_",i,".txt"))
+  Q_file = out_file(paste0("./data/mat_Q_",i,".txt"))
+  
+  r$output(out_P = P_file, out_Q = Q_file)
   
   out <- list(
     r2 = r2,
     rmse = rmse,
     run = run,
     des = des,
-    P = P,
-    Q = Q,
     record_id_train = record_id_train,
     record_id_val = record_id_val,
     record_id_test = record_id_test
@@ -242,7 +244,7 @@ for (i in 1:nrow(eval_grid)){
   # check if r2 is NA; if so, run matrix factorization again
   okay_result <- FALSE
   while (!okay_result){
-    temp <- factorization_wrapper(frac = 1)
+    temp <- factorization_wrapper(i, frac = 1)
     
     if (!is.na(temp$r2)){
       okay_result <- TRUE
@@ -359,8 +361,8 @@ r$train(
     costp_l2 = 0,
     costq_l1 = 0,
     costq_l2 = 0,
-    lrate = 0.005,
-    niter = 10,
+    lrate = 0.01,
+    niter = 150,
     verbose = T,
     nthread = nthread, 
     nbin = nthread * 2 # nbin = 4*nthread^2+1
@@ -368,6 +370,26 @@ r$train(
 )
 end_time <- Sys.time()
 dif2 <- end_time - sta_time
+
+# evaluating on test set
+pred_rvec <- r$predict(test_set)
+r2 <- cor(data_test$rating, pred_rvec) ^ 2
+rmse <- ModelMetrics::rmse(actual = data_test$rating,
+                           predicted = pred_rvec)
+
+# outputting
+r$output(out_P = out_file("mat_P.txt"), out_Q = out_file("mat_Q.txt"))
+
+read.table("mat_P.txt") %>%
+  as.matrix()
+
+
+
+
+
+
+
+
 
 
 
