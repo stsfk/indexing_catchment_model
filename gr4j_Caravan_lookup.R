@@ -11,7 +11,6 @@ pacman::p_load(tidyverse,
                ModelMetrics,
                doParallel,
                Rfast,
-               Rfast2,
                airGR)
 
 # seed --------------------------------------------------------------------
@@ -22,9 +21,19 @@ nthread <- detectCores()
 cl <- makeCluster(nthread-2)
 registerDoParallel(cl)
 
-clusterEvalQ(cl, library(lubridate))
-clusterEvalQ(cl, library(airGR))
-clusterEvalQ(cl, library(tidyverse))
+clusterEvalQ(cl, {
+  pacman::p_load(tidyverse,
+                 lubridate,
+                 zeallot,
+                 recosystem,
+                 rgenoud,
+                 GA,
+                 ModelMetrics,
+                 doParallel,
+                 Rfast,
+                 airGR)
+})
+
 
 # data --------------------------------------------------------------------
 
@@ -62,7 +71,6 @@ calibrated_NSE <- tibble(
   catchment_id = catchments,
   nse = sapply(OutputsCalibs, function(x) x$CritFinal)
 )
-  
 
 # Function ----------------------------------------------------------------
 
@@ -101,7 +109,7 @@ get_catchment_gof <- function(selected_catchment_id, selected_para_ids, selected
     OutputsCrit$CritValue
   }
   
-  out <- foreach(x=1:nrow(selected_paras)) %dopar%
+  out <- foreach(x=1:nrow(selected_paras)) %do%
     OutputsCrit_wrapper(x) %>%
     unlist()
   
@@ -161,7 +169,7 @@ fn_factory <- function(Q, rating) {
   function(x) {
     # This function computes the predicted
     pred <- Rfast::eachrow(Q, x, "*")
-    pred <- Rfast::rowsums(pred)
+    pred <- Rfast::rowsums(pred, parallel = T)
     
     - ModelMetrics::rmse(actual = rating, predicted = pred)
   }
@@ -260,42 +268,48 @@ top_n_nse <- function(p, n, selected_catchment_id){
   )
 }
 
-catchment_top_n_nse_wrapper <-
-  function(selected_catchment_id,
-           n = 200,
-           n_probed = latent_dim * 2,
-           train_portion = 0.8) {
-    p <- derive_p(n_probed, train_portion, selected_catchment_id)
-    
-    top_n_nse(p, n, selected_catchment_id)
-  }
-
-
-# Modeling ----------------------------------------------------------------
 eval_grid <- expand_grid(
   selected_catchment_id = catchments,
-  n_probed = round(latent_dim *c(0.5,1,2,5)),
+  n_probed = round(latent_dim *c(0.5,1,2,4)),
   repeats = 1:5,
   results = vector("list",1)
 )
 
-#for (i in 1:nrow(eval_grid)){
-for (i in 290:310){
-  selected_catchment_id <- eval_grid$selected_catchment_id[[i]]
-  n_probed <- eval_grid$n_probed[[i]]
+catchment_top_n_nse_wrapper <- function(i, n_retrieved = 200) {
   
-  eval_grid$results[[i]] <- catchment_top_n_nse_wrapper(
-    selected_catchment_id=selected_catchment_id,
-    n = 200,
-    n_probed =n_probed,
-    train_portion = 0.8)
+  n_probed <- eval_grid$n_probed[[i]]
+  selected_catchment_id <- eval_grid$selected_catchment_id[[i]]
+  
+  p <- derive_p(n_probed, train_portion=0.8, selected_catchment_id)
+  
+  top_n_nse(p, n_retrieved, selected_catchment_id)
 }
+
+# Modeling ----------------------------------------------------------------
+
+eval_grid <- expand_grid(
+  selected_catchment_id = catchments,
+  n_probed = round(latent_dim *c(0.5,1,2,4)),
+  repeats = 1:5,
+  results = vector("list",1)
+)
+
+n_eval <- 1000#nrow(eval_grid)
+
+sta_time <- Sys.time()
+out <- foreach(x=1:n_eval) %dopar%
+  catchment_top_n_nse_wrapper(x)
+end_time <- Sys.time()
+dif1 <- end_time - sta_time
+
+eval_grid$results[1:n_eval] <- out
 
 # Stop --------------------------------------------------------------------
 stopCluster(cl)
 
-
 # Result analysis ---------------------------------------------------------
+eval_grid <- eval_grid %>%
+  rename(catchment_id = selected_catchment_id)
 
 data_plot <- eval_grid %>%
   dplyr::filter(!is.null(results)) %>%
@@ -311,6 +325,18 @@ data_plot <- data_plot %>%
     min_nse = min(retr_nse)
   ) %>%
   left_join(calibrated_NSE, by="catchment_id")
+
+ggplot(data_plot, aes(mean_nse, nse))+
+  geom_point(color = "steelblue")+
+  geom_linerange(aes(xmin = min_nse, xmax = max_nse))+
+  geom_abline(slope = 1)+
+  coord_cartesian(xlim = c(0,1), ylim = c(0,1))+
+  labs(x = "NSE of calibrated models",
+       y = "NSE of retrieved models")+
+  facet_wrap(~n_probed, nrow = 1)+
+  theme_bw()
+
+
 
 ggplot(data_plot, aes(nse, mean_nse))+
   geom_point(color = "steelblue")+
