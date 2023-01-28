@@ -266,38 +266,58 @@ catchment_top_n_nse_wrapper <-
            n_probed = latent_dim * 2,
            train_portion = 0.8) {
     p <- derive_p(n_probed, train_portion, selected_catchment_id)
-    top_n_nse(p, n, selected_catchment_id) %>%
-      mutate(catchment_id = selected_catchment_id)
+    
+    top_n_nse(p, n, selected_catchment_id)
   }
 
 
 # Modeling ----------------------------------------------------------------
-n_catchments <- length(catchments)
+eval_grid <- expand_grid(
+  selected_catchment_id = catchments,
+  n_probed = round(latent_dim *c(0.5,1,2,5)),
+  repeats = 1:5,
+  results = vector("list",1)
+)
 
-results <- vector("list", n_catchments)
-
-for (i in 1:n_catchments){
-  results[[i]] <- catchment_top_n_nse_wrapper(selected_catchment_id=catchments[[i]],
-                              n = 200,
-                              n_probed = latent_dim * 2,
-                              train_portion = 0.8)
+#for (i in 1:nrow(eval_grid)){
+for (i in 290:310){
+  selected_catchment_id <- eval_grid$selected_catchment_id[[i]]
+  n_probed <- eval_grid$n_probed[[i]]
+  
+  eval_grid$results[[i]] <- catchment_top_n_nse_wrapper(
+    selected_catchment_id=selected_catchment_id,
+    n = 200,
+    n_probed =n_probed,
+    train_portion = 0.8)
 }
-
-# Result analysis ---------------------------------------------------------
-
-data_plot <- results %>%
-  bind_rows() %>%
-  group_by(catchment_id) %>%
-  summarise(retr_nse = max(nse)) %>%
-  left_join(calibrated_NSE, by="catchment_id")
-
-ggplot(data_plot, aes(retr_nse, nse))+
-  geom_point()+
-  geom_abline(slope = 1)
 
 # Stop --------------------------------------------------------------------
 stopCluster(cl)
 
 
+# Result analysis ---------------------------------------------------------
 
+data_plot <- eval_grid %>%
+  dplyr::filter(!is.null(results)) %>%
+  unnest(cols = c(results)) %>%
+  group_by(catchment_id, repeats, n_probed) %>%
+  summarise(retr_nse = max(nse)) 
 
+data_plot <- data_plot %>%
+  group_by(catchment_id, n_probed) %>%
+  summarise(
+    max_nse = max(retr_nse),
+    mean_nse = mean(retr_nse),
+    min_nse = min(retr_nse)
+  ) %>%
+  left_join(calibrated_NSE, by="catchment_id")
+
+ggplot(data_plot, aes(nse, mean_nse))+
+  geom_point(color = "steelblue")+
+  geom_linerange(aes(ymin = min_nse, ymax = max_nse))+
+  geom_abline(slope = 1)+
+  coord_cartesian(xlim = c(0,1), ylim = c(0,1))+
+  labs(x = "NSE of calibrated models",
+       y = "NSE of retrieved models")+
+  facet_wrap(~n_probed)+
+  theme_bw()
