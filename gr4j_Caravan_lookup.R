@@ -6,9 +6,6 @@ pacman::p_load(tidyverse,
                lubridate,
                zeallot,
                recosystem,
-               hydroGOF,
-               caret,
-               tidymodels,
                rgenoud,
                GA,
                ModelMetrics,
@@ -38,8 +35,10 @@ rm(results)
 n_instances <- nrow(paras)
 
 # load PQ data
-P <- read.table("./data/mat_P_1.txt", header = FALSE, sep = " ")
-Q <- read.table("./data/mat_Q_1.txt", header = FALSE, sep = " ")
+P <- read.table("./data/mat_P_1.txt", header = FALSE, sep = " ") %>% data.matrix()
+Q <- read.table("./data/mat_Q_1.txt", header = FALSE, sep = " ") %>% data.matrix()
+
+latent_dim <- dim(Q)[2]
 
 # load CAMELS data
 data_raw <- read_csv("./data/CAMELS_US.csv")
@@ -56,6 +55,10 @@ data_process <- data_raw %>%
 
 catchments <- data_process$catchment_id %>% unique()
 
+# calibrated NSEs
+load("./data/OutputsCalibs.Rda")
+
+calibrated_NSE <- sapply(OutputsCalibs, function(x) x$CritFinal)
 
 # Function ----------------------------------------------------------------
 
@@ -143,13 +146,6 @@ prepare_Qs_for_look_up  <- function(n_probed, train_portion, selected_catchment_
   )
 }
 
-
-
-
-
-
-
-
 fn_factory <- function(Q, rating) {
   function(x) {
     # This function computes the predicted
@@ -160,30 +156,7 @@ fn_factory <- function(Q, rating) {
   }
 }
 
-p_rmse <- function(p, Q, rating) {
-  # This function computes the RMSE of predicted ratings of models specified by Q
-  # the target rating is `rating`
-  ModelMetrics::rmse(predicted = p %*% t(Q) %>% as.vector(),
-                     actual = rating)
-}
-
-p_r2 <- function(p, Q, rating) {
-  # This function computes the R-squared of predicted ratings of models specified by Q
-  # the target rating is `rating`
-  cor(p %*% t(Q) %>% as.vector(), rating) ^ 2
-}
-
-p_at_k <- function(pred, actual, k = 1) {
-  # compute precision at K
-  sum(pred$model_id[1:k] %in% actual$model_id[1:k]) / k
-}
-
-mean_diff_at_k <- function(pred, actual, k = 1) {
-  # difference in mean ranking
-  mean(pred$rating[1:k]) - mean(actual$rating[1:k])
-}
-
-derive_p <- function(Q, n_probed, train_portion, catchment_id_look_up){
+derive_p <- function(n_probed, train_portion, selected_catchment_id){
   # train_portion: the portion used in training during GA hyperparameter optimization
   
   # prepare look up data sets
@@ -247,39 +220,84 @@ derive_p <- function(Q, n_probed, train_portion, catchment_id_look_up){
     )
   
   # estimated p
-  p <- GA@solution[1,] %>% unname()
+  GA@solution[1,] %>% unname()
+}
+
+top_n_nse <- function(p, n){
   
-  # evaluate the quality of p
-  pred <- p %*%
-    t(Q_test) %>%
-    as.vector()
+  pred <- p %*% t(Q) %>% as.vector()
   
-  # identify top 100 models specified by Q_test and p
-  top100_pred <- tibble(
-    model_id = model_id_test,
+  top_n <- tibble(
+    model_id = 1:n_instances,
     rating = pred,
     case = "pred"
   ) %>%
     arrange(desc(rating)) %>%
-    slice(1:100)
+    slice(1:n) %>%
+    pull(model_id)
   
-  top100_actual <- tibble(
-    model_id = model_id_test,
-    rating = rating_test,
-    case = "actual"
-  ) %>%
-    arrange(desc(rating)) %>%
-    slice(1:100)
+  top_n_nse <- get_catchment_gof(selected_catchment_id,
+                                  selected_para_ids = top100_pred,
+                                  selected_paras = paras[top100_pred, ])%>% 
+    pull(nse)
   
   # output
-  list(
-    p = p,
-    rmse = p_rmse(p, Q_test, rating_test),
-    r2 = p_r2(p, Q_test, rating_test),
-    top100_actual = top100_actual,
-    top100_pred = top100_pred
+  tibble(
+    para_id = top_n,
+    nse = top_n_nse,
+    rank = 1:n
   )
 }
+
+
+
+
+
+derive_p(n_probed = latent_dim * 2, train_portion = 0.8, selected_catchment_id = catchments[[400]])
+
+
+
+
+
+
+
+
+p_rmse <- function(p, Q, rating) {
+  # This function computes the RMSE of predicted ratings of models specified by Q
+  # the target rating is `rating`
+  ModelMetrics::rmse(predicted = p %*% t(Q) %>% as.vector(),
+                     actual = rating)
+}
+
+p_r2 <- function(p, Q, rating) {
+  # This function computes the R-squared of predicted ratings of models specified by Q
+  # the target rating is `rating`
+  cor(p %*% t(Q) %>% as.vector(), rating) ^ 2
+}
+
+# evaluate the quality of p
+pred <- p %*% t(Q) %>% as.vector()
+
+top100_para_id <- tibble(
+  model_id = 1:n_instances,
+  rating = pred,
+  case = "pred"
+) %>%
+  arrange(desc(rating)) %>%
+  slice(1:100) %>%
+  pull(model_id)
+
+top100_nse <- get_catchment_gof(selected_catchment_id,
+                                selected_para_ids = top100_pred,
+                                selected_paras = paras[top100_pred, ])%>% 
+  pull(nse)
+
+# output
+list(
+  p = p,
+  para_id = top100_para_id,
+  nse = top100_nse
+)
 
 # Derive P and Q ----------------------------------------------------------
 

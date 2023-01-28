@@ -7,14 +7,17 @@ pacman::p_load(tidyverse,
                zeallot,
                recosystem,
                hydroGOF,
-               caret,
-               tidymodels,
                mlrMBO,
-               parallel)
+               ModelMetrics,
+               lhs,
+               DiceKriging,
+               parallel,
+               rgenoud)
+
 
 # seed --------------------------------------------------------------------
 
-set.seed(1234)
+set.seed(12345)
 nthread <- parallel::detectCores() - 1 # number of CPU thread
 
 # data --------------------------------------------------------------------
@@ -176,7 +179,7 @@ factorization_wrapper <- function(i, frac = 1) {
   
   # statistical design 
   des <- generateDesign(
-    n = 5 * getNumberOfParameters(obj_fun),
+    n = 5* getNumberOfParameters(obj_fun),
     par.set = getParamSet(obj_fun),
     fun = lhs::randomLHS
   )
@@ -185,7 +188,7 @@ factorization_wrapper <- function(i, frac = 1) {
   
   # set number of generation
   control <- makeMBOControl() %>%
-    setMBOControlTermination(., iters = 100 - 5 * getNumberOfParameters(obj_fun))
+    setMBOControlTermination(., iters = 100 - 5* getNumberOfParameters(obj_fun))
   
   # run Bayesian optimization 
   run <- mbo(
@@ -201,6 +204,7 @@ factorization_wrapper <- function(i, frac = 1) {
   opts <- run$x
   opts$nthread <- nthread
   opts$verbose <- F
+  opts$nbin <- nthread * 2
   r$train(train_val_set, opts = opts)
   
   # evaluating on test set
@@ -233,7 +237,7 @@ eval_grid <- expand_grid(
   r2 = 0,
   rmse = 0,
   out = vector("list",1),
-  repeats = c(1:1)
+  repeats = c(1:10)
 )
 
 sta_time <- Sys.time()
@@ -263,8 +267,6 @@ end_time <- Sys.time()
 
 end_time - sta_time
 
-# save(eval_grid, file = "./data/dens_factorization.Rda")
-
 
 # Post processing ---------------------------------------------------------
 # load("./data/dens_factorization.Rda")
@@ -279,138 +281,3 @@ eval_grid$rmse %>% mean(na.rm = T)
 eval_grid$rmse %>% var(na.rm = T)
 
 # plot --------------------------------------------------------------------
-
-
-
-# Speed test --------------------------------------------------------------
-
-
-c(data_train,
-  data_val,
-  data_test,
-  record_id_train,
-  record_id_val,
-  record_id_test) %<-% prepare_modeling_data(frac = frac)
-
-# training set
-train_set <- data_memory(
-  user_index = data_train$catchment_id,
-  item_index = data_train$model_id,
-  rating = data_train$rating,
-  index1 = T
-)
-
-# validation set
-val_set <- data_memory(
-  user_index = data_val$catchment_id,
-  item_index = data_val$model_id,
-  rating = data_val$rating,
-  index1 = T
-)
-
-# training and validation set combined
-data_train_val <- data_train %>%
-  bind_rows(data_val)
-train_val_set <- data_memory(
-  user_index = data_train_val$catchment_id,
-  item_index = data_train_val$model_id,
-  rating = data_train_val$rating,
-  index1 = T
-)
-
-# test set
-test_set <- data_memory(
-  user_index = data_test$catchment_id,
-  item_index = data_test$model_id,
-  rating = data_test$rating,
-  index1 = T
-)
-
-
-
-sta_time <- Sys.time()
-r = Reco()
-r$train(
-  train_set,
-  opts = list(
-    dim = 100,
-    costp_l1 = 0,
-    costp_l2 = 0,
-    costq_l1 = 0,
-    costq_l2 = 0,
-    lrate = 0.005,
-    niter = 10,
-    verbose = T,
-    nthread = nthread, 
-    nbin = 20 # nbin = 4*nthread^2+1
-  )
-)
-end_time <- Sys.time()
-dif1 <- end_time - sta_time
-
-
-
-
-sta_time <- Sys.time()
-r = Reco()
-r$train(
-  train_set,
-  opts = list(
-    dim = 100,
-    costp_l1 = 0,
-    costp_l2 = 0,
-    costq_l1 = 0,
-    costq_l2 = 0,
-    lrate = 0.01,
-    niter = 150,
-    verbose = T,
-    nthread = nthread, 
-    nbin = nthread * 2 # nbin = 4*nthread^2+1
-  )
-)
-end_time <- Sys.time()
-dif2 <- end_time - sta_time
-
-# evaluating on test set
-pred_rvec <- r$predict(test_set)
-r2 <- cor(data_test$rating, pred_rvec) ^ 2
-rmse <- ModelMetrics::rmse(actual = data_test$rating,
-                           predicted = pred_rvec)
-
-# outputting
-r$output(out_P = out_file("mat_P.txt"), out_Q = out_file("mat_Q.txt"))
-
-read.table("mat_P.txt") %>%
-  as.matrix()
-
-
-
-
-
-
-
-
-
-
-
-
-
-sta_time <- Sys.time()
-r = Reco()
-r$train(
-  train_set,
-  opts = list(
-    dim = 100,
-    costp_l1 = 0,
-    costp_l2 = 0,
-    costq_l1 = 0,
-    costq_l2 = 0,
-    lrate = 0.005,
-    niter = 10,
-    verbose = T,
-    nthread = nthread, 
-    nbin = 4*nthread^2+1
-  )
-)
-end_time <- Sys.time()
-dif3 <- end_time - sta_time
