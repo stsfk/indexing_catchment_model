@@ -58,9 +58,20 @@ catchments <- data_process$catchment_id %>% unique()
 # calibrated NSEs
 load("./data/OutputsCalibs.Rda")
 
-calibrated_NSE <- sapply(OutputsCalibs, function(x) x$CritFinal)
+calibrated_NSE <- tibble(
+  catchment_id = catchments,
+  nse = sapply(OutputsCalibs, function(x) x$CritFinal)
+)
+  
 
 # Function ----------------------------------------------------------------
+
+p_rmse <- function(p, Q, rating) {
+  # This function computes the RMSE of predicted ratings of models specified by Q
+  # the target rating is `rating`
+  ModelMetrics::rmse(predicted = p %*% t(Q) %>% as.vector(),
+                     actual = rating)
+}
 
 get_catchment_gof <- function(selected_catchment_id, selected_para_ids, selected_paras){
   
@@ -223,7 +234,7 @@ derive_p <- function(n_probed, train_portion, selected_catchment_id){
   GA@solution[1,] %>% unname()
 }
 
-top_n_nse <- function(p, n){
+top_n_nse <- function(p, n, selected_catchment_id){
   
   pred <- p %*% t(Q) %>% as.vector()
   
@@ -237,8 +248,8 @@ top_n_nse <- function(p, n){
     pull(model_id)
   
   top_n_nse <- get_catchment_gof(selected_catchment_id,
-                                  selected_para_ids = top100_pred,
-                                  selected_paras = paras[top100_pred, ])%>% 
+                                  selected_para_ids = top_n,
+                                  selected_paras = paras[top_n, ])%>% 
     pull(nse)
   
   # output
@@ -249,311 +260,44 @@ top_n_nse <- function(p, n){
   )
 }
 
-
-
-
-
-derive_p(n_probed = latent_dim * 2, train_portion = 0.8, selected_catchment_id = catchments[[400]])
-
-
-
-
-
-
-
-
-p_rmse <- function(p, Q, rating) {
-  # This function computes the RMSE of predicted ratings of models specified by Q
-  # the target rating is `rating`
-  ModelMetrics::rmse(predicted = p %*% t(Q) %>% as.vector(),
-                     actual = rating)
-}
-
-p_r2 <- function(p, Q, rating) {
-  # This function computes the R-squared of predicted ratings of models specified by Q
-  # the target rating is `rating`
-  cor(p %*% t(Q) %>% as.vector(), rating) ^ 2
-}
-
-# evaluate the quality of p
-pred <- p %*% t(Q) %>% as.vector()
-
-top100_para_id <- tibble(
-  model_id = 1:n_instances,
-  rating = pred,
-  case = "pred"
-) %>%
-  arrange(desc(rating)) %>%
-  slice(1:100) %>%
-  pull(model_id)
-
-top100_nse <- get_catchment_gof(selected_catchment_id,
-                                selected_para_ids = top100_pred,
-                                selected_paras = paras[top100_pred, ])%>% 
-  pull(nse)
-
-# output
-list(
-  p = p,
-  para_id = top100_para_id,
-  nse = top100_nse
-)
-
-# Derive P and Q ----------------------------------------------------------
-
-# iterate over the train_folds, i.e., repeat the look-up experiment on different splits of the data
-eval_grids <- vector("list", length(train_folds))
-Ps  <- vector("list", length(train_folds))
-Qs  <- vector("list", length(train_folds))
-
-for (i in seq_along(train_folds)){
-  
-  # split data set into data_base for estimating P and Q, and data_look_up for look up experiments
-  c(data_base, data_look_up, catchment_id_bases, catchment_id_look_ups) %<-% 
-    base_look_up_split(train_fold = train_folds[[i]])
-  
-  # derive P and Q
-  c(P, Q, record_id_train, record_id_val) %<-% derive_PQ_wrapper(data_base)
-  
-  # n_probed: the numbers of edges evaluated for estimating p
-  
-  eval_grid <- expand_grid(
-    probed_ratio = 0.5*1:4, # 0.5, 1, 1.5, and 2 times of the latent dimension
-    catchment_id_look_up = catchment_id_look_ups,
-    out = vector("list", 1)
-  ) %>%
-    mutate(n_probed = round(dim(P)[2]*probed_ratio))
-  
-  out_wrapper <- function(x){
-    n_probed <- eval_grid$n_probed[[x]]
-    catchment_id_look_up <- eval_grid$catchment_id_look_up[[x]]
-    train_portion <- 0.8
-    
-    # output
-    derive_p(Q, n_probed, train_portion, catchment_id_look_up)
+catchment_top_n_nse_wrapper <-
+  function(selected_catchment_id,
+           n = 200,
+           n_probed = latent_dim * 2,
+           train_portion = 0.8) {
+    p <- derive_p(n_probed, train_portion, selected_catchment_id)
+    top_n_nse(p, n, selected_catchment_id) %>%
+      mutate(catchment_id = selected_catchment_id)
   }
-  
-  # iterate over eval_grid
-  outs <- foreach(x=1:nrow(eval_grid)) %dopar% 
-    out_wrapper(x)
-  
-  # save result to eval_grid
-  eval_grid <- eval_grid %>%
-    mutate(out = outs) %>%
-    mutate(train_fold_id = i) # register fold id
-  
-  # output
-  eval_grids[[i]] <- eval_grid
-  Ps[[i]] <- P
-  Qs[[i]] <- Q
+
+
+# Modeling ----------------------------------------------------------------
+n_catchments <- length(catchments)
+
+results <- vector("list", n_catchments)
+
+for (i in 1:n_catchments){
+  results[[i]] <- catchment_top_n_nse_wrapper(selected_catchment_id=catchments[[i]],
+                              n = 200,
+                              n_probed = latent_dim * 2,
+                              train_portion = 0.8)
 }
 
-eval_grid <- eval_grids %>%
-  bind_rows()
+# Result analysis ---------------------------------------------------------
 
-save(Ps, Qs, train_folds, eval_grid, file = "./data/dense_look_up.Rda")
+data_plot <- results %>%
+  bind_rows() %>%
+  group_by(catchment_id) %>%
+  summarise(retr_nse = max(nse)) %>%
+  left_join(calibrated_NSE, by="catchment_id")
 
-# stop
+ggplot(data_plot, aes(retr_nse, nse))+
+  geom_point()+
+  geom_abline(slope = 1)
+
+# Stop --------------------------------------------------------------------
 stopCluster(cl)
 
 
-
-# Analysis ----------------------------------------------------------------
-
-load("./data/dense_look_up.Rda")
-
-catchment_lookup_groups <- lapply(train_folds,
-                                  function(x)
-                                    data_process[-x, ] %>% pull(catchment_id) %>% unique())
-
-eval_summary <- eval_grid %>%
-  mutate(r2 = map_dbl(out, function(x) x$r2),
-         rmse = map_dbl(out, function(x) x$rmse)) %>%
-  group_by(probed_ratio) %>%
-  summarise(r2_mean = mean(r2),
-            r2_sd = sd(r2),
-            rmse_mean = mean(rmse),
-            rmse_sd = sd(rmse))
-
-
-eval_summary %>% transmute(
-  r2 = paste0(
-    round(r2_mean, 3),
-    "(",
-    formatC(r2_sd, format = "e", digits = 2),
-    ")"
-  ),
-  rmse = paste0(
-    round(rmse_mean, 3),
-    "(",
-    formatC(rmse_sd, format = "e", digits = 2),
-    ")"
-  )
-)
-
-
-# compare top retrieved model with actual top models
-
-get_predicted_model_rating <- function(catchment_id_look_up, out){
-  predicted_model_rating <- data_process %>%
-    filter(catchment_id == catchment_id_look_up,
-           model_id %in% out$top100_pred$model_id) %>%
-    select(model_id, actual_rating=rating)
-  
-  out$top100_pred %>% 
-    left_join(predicted_model_rating, by = "model_id") %>% # to keep the predicted model ranking
-    pull(actual_rating)
-}
-
-eval_grid_expand <- eval_grid %>%
-  mutate(
-    predicted_model_rating = map2(catchment_id_look_up, out, get_predicted_model_rating)
-  ) 
-
-eval_grid_expand %>%
-  mutate(catchment_group = map_dbl(catchment_id_look_up, function(y) which(
-    sapply(catchment_lookup_groups, function(x)
-      y %in% x)
-  )))
-
-eval_grid_expand %>%
-  mutate(
-    actual_best_model_rating = map_dbl(out, function(x) x$top100_actual$rating %>% max),
-    hit1 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1]),
-    hit10 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1:10]),
-    hit25 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1:25]),
-    hit100 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id),
-    diff1 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-x[1]),
-    diff10 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:10])),
-    diff25 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:25])),
-    diff100 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:100])),
-    diff1p = diff1/actual_best_model_rating*100,
-    diff10p = diff10/actual_best_model_rating*100,
-    diff25p = diff25/actual_best_model_rating*100,
-    diff100p = diff100/actual_best_model_rating*100
-  ) %>%
-  group_by(train_fold_id,probed_ratio) %>%
-  summarise(
-    hit1 = mean(hit1),
-    hit10 = mean(hit10),
-    hit100 = mean(hit100),
-    diff1 = mean(diff1),
-    diff10 = mean(diff10),
-    diff100 = mean(diff100),
-    diff1p = mean(diff1p),
-    diff10p = mean(diff10p),
-    diff100p = mean(diff100p),
-  ) %>%
-  group_by(probed_ratio) %>%
-  summarise(
-    hit1_sd = sd(hit1),
-    hit10_sd = sd(hit10),
-    hit100_sd = sd(hit100),
-    hit1 = mean(hit1),
-    hit10 = mean(hit10),
-    hit100 = mean(hit100),
-    diff1_sd = sd(diff1),
-    diff10_sd = sd(diff10),
-    diff100_sd = sd(diff100),
-    diff1 = mean(diff1),
-    diff10 = mean(diff10),
-    diff100 = mean(diff100),
-    diff1p_sd = sd(diff1p),
-    diff10p_sd = sd(diff10p),
-    diff100p_sd = sd(diff100p),
-    diff1p = mean(diff1p),
-    diff10p = mean(diff10p),
-    diff100p = mean(diff100p),
-  ) %>% 
-  transmute(
-    probed_ratio = probed_ratio,
-    hit1 = paste0(
-      formatC(hit1, format = "f", digits = 3),
-      "(",
-      formatC(hit1_sd, format = "f", digits = 3),
-      ")"
-    ),
-    hit10 = paste0(
-      formatC(hit10, format = "f", digits = 3),
-      "(",
-      formatC(hit10_sd, format = "f", digits = 3),
-      ")"
-    ),
-    hit100 = paste0(
-      formatC(hit100, format = "f", digits = 3),
-      "(",
-      formatC(hit100_sd, format = "f", digits = 3),
-      ")"
-    ),
-    diff1 = paste0(
-      formatC(diff1, format = "f", digits = 3),
-      "(",
-      formatC(diff1_sd, format = "f", digits = 3),
-      ")"
-    ),
-    diff10 = paste0(
-      formatC(diff10, format = "f", digits = 3),
-      "(",
-      formatC(diff10_sd, format = "f", digits = 3),
-      ")"
-    ),
-    diff100 = paste0(
-      formatC(diff100, format = "f", digits = 3),
-      "(",
-      formatC(diff100_sd, format = "f", digits = 3),
-      ")"
-    ),
-    diff1p = paste0(
-      formatC(diff1p, format = "f", digits = 3),
-      "(",
-      formatC(diff1p_sd, format = "f", digits = 3),
-      ")"
-    ),
-    diff10p = paste0(
-      formatC(diff10p, format = "f", digits = 3),
-      "(",
-      formatC(diff10p_sd, format = "f", digits = 3),
-      ")"
-    ),
-    diff100p = paste0(
-      formatC(diff100p, format = "f", digits = 3),
-      "(",
-      formatC(diff100p_sd, format = "f", digits = 3),
-      ")"
-    )
-  ) %>%
-  view()
-
-
-
-
-
-
-
-
-
-
-
-# LM experiments ----------------------------------------------------------
-
-data_lm <- Q_probed %>%
-  as.data.frame() %>%
-  mutate(rating = rating_probed)
-
-model <- lm(rating ~ . - 1, data = data_lm)
-preds <- predict(model, data_lm)
-plot(preds, data_lm$rating)
-cor(data_lm$rating, preds)^2
-
-
-data_lm_test <- Q[model_id_test,] %>%
-  as.data.frame() %>%
-  mutate(rating = rating_test)
-preds <- predict(model, data_lm_test)
-
-plot(preds, data_lm_test$rating)
-
-cor(data_lm_test$rating, preds)^2
-plot(data_lm_test$rating, preds)
 
 
