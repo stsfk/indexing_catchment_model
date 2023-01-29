@@ -239,12 +239,12 @@ p <- derive_p(n_probed, train_portion)
 retrieval_result <- top_n_nse(p, n_retrieved)
 
 retrieved_nse <- retrieval_result$nse %>% max()
-retrieved_nse_para <- paras[retrieval_result$para_id[which.max(retrieval_result$nse)],] %>% unname()
+retrieved_para <- paras[retrieval_result$para_id[which.max(retrieval_result$nse)],] %>% unname()
 
 # Result analysis ---------------------------------------------------------
 
 Q_calibrated <- RunModel_GR4J(InputsModel = InputsModel, RunOptions = RunOptions, Param = calibrated_para)$Qsim
-Q_retrieved <- RunModel_GR4J(InputsModel = InputsModel, RunOptions = RunOptions, Param = retrieved_nse_para)$Qsim
+Q_retrieved <- RunModel_GR4J(InputsModel = InputsModel, RunOptions = RunOptions, Param = retrieved_para)$Qsim
 Q_actual <- BasinObs[Ind_Run,] %>% pull(Qmm)
 
 data_plot <- tibble(
@@ -262,7 +262,8 @@ p1 <- data_plot %>%
        linetype = "",
        y = "Flow [mm/day]") +
   theme_bw()+
-  theme(legend.position = "top")
+  theme(legend.position = "top",
+        axis.title.x = element_blank())
   
 p1 +
   cowplot::draw_text(
