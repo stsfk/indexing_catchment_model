@@ -124,6 +124,8 @@ results <-results %>% unnest(out) %>%
 # saving results
 save(paras, results, file = "./data/gr4j_carvan.Rda")
 
+write.table(paras, quote = F, sep = " ", row.names = F, col.names = F, file = "data/gr4jparas.txt")
+
 # Stop --------------------------------------------------------------------
 
 stopCluster(cl)
