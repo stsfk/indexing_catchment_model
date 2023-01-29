@@ -6,7 +6,6 @@ pacman::p_load(tidyverse,
                lubridate,
                zeallot,
                recosystem,
-               rgenoud,
                GA,
                ModelMetrics,
                doParallel,
@@ -26,7 +25,6 @@ clusterEvalQ(cl, {
                  lubridate,
                  zeallot,
                  recosystem,
-                 rgenoud,
                  GA,
                  ModelMetrics,
                  doParallel,
@@ -38,8 +36,7 @@ clusterEvalQ(cl, {
 # data --------------------------------------------------------------------
 
 # load gr4j parameters
-load("./data/gr4j_carvan.Rda")
-rm(results)
+paras <- read.table("./data/gr4jparas.txt", header = FALSE, sep = " ") %>% data.matrix()
 
 n_instances <- nrow(paras)
 
@@ -169,7 +166,7 @@ fn_factory <- function(Q, rating) {
   function(x) {
     # This function computes the predicted
     pred <- Rfast::eachrow(Q, x, "*")
-    pred <- Rfast::rowsums(pred, parallel = T)
+    pred <- Rfast::rowsums(pred, parallel = F)
     
     - ModelMetrics::rmse(actual = rating, predicted = pred)
   }
@@ -290,11 +287,11 @@ catchment_top_n_nse_wrapper <- function(i, n_retrieved = 200) {
 eval_grid <- expand_grid(
   selected_catchment_id = catchments,
   n_probed = round(latent_dim *c(0.5,1,2,4)),
-  repeats = 1:5,
+  repeats = 1:10,
   results = vector("list",1)
 )
 
-n_eval <- 1000#nrow(eval_grid)
+n_eval <- nrow(eval_grid)
 
 sta_time <- Sys.time()
 out <- foreach(x=1:n_eval) %dopar%
@@ -331,19 +328,7 @@ ggplot(data_plot, aes(mean_nse, nse))+
   geom_linerange(aes(xmin = min_nse, xmax = max_nse))+
   geom_abline(slope = 1)+
   coord_cartesian(xlim = c(0,1), ylim = c(0,1))+
-  labs(x = "NSE of calibrated models",
-       y = "NSE of retrieved models")+
+  labs(x = "NSE of retrieved models",
+       y = "NSE of calibrated models")+
   facet_wrap(~n_probed, nrow = 1)+
-  theme_bw()
-
-
-
-ggplot(data_plot, aes(nse, mean_nse))+
-  geom_point(color = "steelblue")+
-  geom_linerange(aes(ymin = min_nse, ymax = max_nse))+
-  geom_abline(slope = 1)+
-  coord_cartesian(xlim = c(0,1), ylim = c(0,1))+
-  labs(x = "NSE of calibrated models",
-       y = "NSE of retrieved models")+
-  facet_wrap(~n_probed)+
   theme_bw()
