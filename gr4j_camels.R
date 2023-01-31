@@ -45,7 +45,7 @@ random_para_gen <- function(n_para = 4, LB = c(1, -10, 1, 1), UB = c(2000, 15, 3
   runif(n_para) * (UB - LB) + LB
 }
 
-get_catchment_gof <- function(selected_catchment_id, selected_para_ids, selected_paras){
+get_catchment_gof <- function(selected_catchment_id, selected_para_ids, selected_paras, ver){
   
   # subsetting by catchment
   BasinObs <- data_process %>%
@@ -54,9 +54,14 @@ get_catchment_gof <- function(selected_catchment_id, selected_para_ids, selected
   InputsModel <- CreateInputsModel(FUN_MOD = RunModel_GR4J, DatesR = BasinObs$DatesR,
                                    Precip = BasinObs$P, PotEvap = BasinObs$E)
   
-  Ind_Run <- seq(which(format(BasinObs$DatesR, format = "%Y-%m-%d") == "1990-01-01"), 
-                 which(format(BasinObs$DatesR, format = "%Y-%m-%d") == "2010-12-31"))
-  
+  if (ver == 1){
+    Ind_Run <- seq(which(format(BasinObs$DatesR, format = "%Y-%m-%d") == "1988-10-01"), 
+                   which(format(BasinObs$DatesR, format = "%Y-%m-%d") == "1998-09-30"))
+  } else{
+    Ind_Run <- seq(which(format(BasinObs$DatesR, format = "%Y-%m-%d") == "1998-10-01"), 
+                   which(format(BasinObs$DatesR, format = "%Y-%m-%d") == "2009-09-30"))
+  }
+
   RunOptions <- CreateRunOptions(FUN_MOD = RunModel_GR4J,
                                  InputsModel = InputsModel, IndPeriod_Run = Ind_Run,
                                  IniStates = NULL, IniResLevels = NULL, IndPeriod_WarmUp = NULL)
@@ -95,34 +100,38 @@ paras <- lapply(1:n_paras, function(x) random_para_gen()) %>%
   matrix(ncol = 4, byrow = T)
 
 results <- expand_grid(catchment_id = data_process$catchment_id %>% unique(),
-                       para_id = 1:n_paras) %>%
+                       para_id = 1:n_paras, ver = c(1:2)) %>%
   group_by(para_id)%>%
   sample_frac(sample_frac) %>%
   ungroup() %>% 
-  group_by(catchment_id) %>%
+  group_by(catchment_id, ver) %>%
   summarise(para_ids = list(para_id)) %>%
-  mutate(out = vector("list", 1))
+  ungroup() %>%
+  mutate(out = vector("list", 1)) 
+
 
 for (i in 1:nrow(results)){
   
   selected_catchment_id <- results$catchment_id[[i]]
   selected_para_ids <- results$para_ids[[i]]
   selected_paras <- paras[selected_para_ids,]
+  ver <- results$ver[[i]]
   
-  results$out[[i]] <- get_catchment_gof(selected_catchment_id, selected_para_ids, selected_paras)
+  results$out[[i]] <- get_catchment_gof(selected_catchment_id, selected_para_ids, selected_paras, ver)
 }
 
 results <-results %>% unnest(out) %>%
   mutate(rating = 1 / (2 - nse) * 10) %>%
   dplyr::select(catchment_id,
+                ver,
                 model_id = para_id,
                 rating) %>%
   mutate(record_id = 1:n()) # give each row a unique ID
 
 # saving results
-save(paras, results, file = "./data/gr4j_carvan.Rda")
+save(paras, results, file = "./data/gr4j_camels.Rda")
 
-write.table(paras, quote = F, sep = " ", row.names = F, col.names = F, file = "data/gr4jparas.txt")
+write.table(paras, quote = F, sep = " ", row.names = F, col.names = F, file = "data/gr4jparas_camels.txt")
 
 # Stop --------------------------------------------------------------------
 
