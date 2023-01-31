@@ -305,30 +305,103 @@ eval_grid$results[1:n_eval] <- out
 stopCluster(cl)
 
 # Result analysis ---------------------------------------------------------
-eval_grid <- eval_grid %>%
-  rename(catchment_id = selected_catchment_id)
+# load CAMELS data
+data_raw <- read_csv("./data/CAMELS_US.csv")
 
-data_plot <- eval_grid %>%
-  dplyr::filter(!is.null(results)) %>%
-  unnest(cols = c(results)) %>%
-  group_by(catchment_id, repeats, n_probed) %>%
-  summarise(retr_nse = max(nse)) 
+data_process <- data_raw %>%
+  transmute(
+    catchment_id = catchment_id,
+    DatesR = as.POSIXct(date, format = "%Y-%m-%d", tz = "UTC"),
+    P = P,
+    `T` = `T`,
+    E = PET,
+    Qmm = Q
+  )
+
+catchments <- data_process$catchment_id %>% unique()
+
+load("./data/OutputsCalibs.Rda")
+
+calibrated_NSE <- tibble(
+  catchment_id = catchments,
+  nse = sapply(OutputsCalibs, function(x) x$CritFinal)
+) %>%
+  mutate(rating = 1 / (2 - nse) * 10)
+
+load("./data/carvan_look_up.Rda")
+
+prepare_data_plot <- function(n_retrieved){
+  data_plot <- eval_grid %>%
+    dplyr::filter(!is.null(results)) %>%
+    unnest(cols = c(results)) %>%
+    filter(rank %in% c(1:n_retrieved)) %>%
+    mutate(rating = 1 / (2 - nse) * 10) %>%
+    group_by(catchment_id, repeats, n_probed) %>%
+    summarise(retr_rating = max(rating)) 
+  
+  data_plot %>%
+    group_by(catchment_id, n_probed) %>%
+    summarise(
+      max_rating = max(retr_rating),
+      mean_rating = mean(retr_rating),
+      min_rating = min(retr_rating)
+    ) %>%
+    left_join(calibrated_NSE, by="catchment_id") %>%
+    mutate(n_retrieved = n_retrieved)
+}
+
+data_plot<-lapply(c(1,10,100), prepare_data_plot) %>%
+  bind_rows()
 
 data_plot <- data_plot %>%
-  group_by(catchment_id, n_probed) %>%
-  summarise(
-    max_nse = max(retr_nse),
-    mean_nse = mean(retr_nse),
-    min_nse = min(retr_nse)
-  ) %>%
-  left_join(calibrated_NSE, by="catchment_id")
+  mutate(n_probed = factor(
+    n_probed,
+    labels = paste0("n/d=", c(0.5, 1, 2, 4), "\n(", c(18,37,74,148), " models evaluted)")
+  )) %>%
+  mutate(n_retrieved = factor(
+    n_retrieved,
+    labels = paste0(c(1, 10, 100), " models retrieved")
+  )) %>%
+  ungroup()
 
-ggplot(data_plot, aes(mean_nse, nse))+
-  geom_point(color = "steelblue")+
-  geom_linerange(aes(xmin = min_nse, xmax = max_nse))+
+data_plot_text <- data_plot %>% 
+  slice(1) %>%
+  mutate(text = "reference line y=x",
+         mean_rating = 4.8,
+         rating = 4.5)
+
+ggplot(data_plot, aes(mean_rating, rating))+
+  geom_linerange(aes(xmin = min_rating, xmax = max_rating), color = "grey60", linewidth = 0.2)+
+  geom_point(color = "steelblue", shape = 1, size = 0.7, stroke = 0.4)+
   geom_abline(slope = 1)+
-  coord_cartesian(xlim = c(0,1), ylim = c(0,1))+
-  labs(x = "NSE of retrieved models",
-       y = "NSE of calibrated models")+
-  facet_wrap(~n_probed, nrow = 1)+
-  theme_bw()
+  geom_text(data = data_plot_text, aes(mean_rating,rating, label= text), size = 2.5, hjust = 0)+
+  labs(x = "Maximum NSE of the retrieved models",
+       y = "NSE of the calibrated models")+
+  facet_grid(n_retrieved~n_probed)+
+  scale_x_continuous(breaks = c(0:5)*2) +
+  scale_y_continuous(breaks = c(2:5)*2) +
+  coord_cartesian(xlim = c(0,10), ylim = c(4,10))+
+  theme_bw(base_size = 9)
+
+ggsave(filename = "data/caravan_lookup.png", units = c("in"), width = 9, height = 5)
+ggsave(filename = "data/caravan_lookup.pdf", units = c("in"), width = 9, height = 5)
+
+
+
+# compare best models
+
+data_plot<-lapply(c(1,10,100), prepare_data_plot) %>%
+  bind_rows()%>%
+  ungroup()
+
+data_plot %>%
+  filter(n_probed == 148, n_retrieved == 100) %>%
+  ggplot(aes(max_rating, rating))+
+  geom_point(color = "steelblue")+
+  geom_abline(slope = 1)+
+  labs(x = "Maximum NSE of the retrieved models",
+       y = "NSE of the calibrated models")
+
+
+
+
