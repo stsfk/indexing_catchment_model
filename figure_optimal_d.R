@@ -5,13 +5,16 @@ pacman::p_load(
   tidyverse
 )
 
+
+# data --------------------------------------------------------------------
+
 # Dense data set whole
 load("./data/dens_factorization.Rda")
 
 data_dens_whole <- eval_grid %>% select(r2, rmse) %>%
   mutate(dims = sapply(eval_grid$out, function(x)
     x$P %>% dim() %>% .[2])) %>%
-  mutate(ratio = 0.05,
+  mutate(ratio = 1,
          dataset = "Dense")
 
 # Dense data set sub
@@ -48,4 +51,20 @@ data_plot <- data_dens_whole %>%
   bind_rows(data_intense) %>% 
   select(dataset, everything())
 
-save(data_plot, "./data/optimal_d.Rda")
+save(data_plot, file = "./data/optimal_d.Rda")
+
+
+# Plot --------------------------------------------------------------------
+
+load("./data/optimal_d.Rda")
+
+ggplot(data_plot, aes(r2, dims, color = ratio))+
+  geom_point()+
+  facet_wrap(~dataset, scales = "free")
+
+ggplot(data_plot, aes(r2, dims))+
+  geom_point()+
+  facet_grid(dataset ~ factor(ratio), scales = "free")
+
+
+
