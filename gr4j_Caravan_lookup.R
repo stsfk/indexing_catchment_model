@@ -356,11 +356,11 @@ data_plot<-lapply(c(1,10,100), prepare_data_plot) %>%
 data_plot <- data_plot %>%
   mutate(n_probed = factor(
     n_probed,
-    labels = paste0("n/d=", c(0.5, 1, 2, 4), "\n(", c(18,37,74,148), " models evaluted)")
+    labels = paste0("n/d=", c(0.5, 1, 2, 4), "\n(", c(18,37,74,148), " instances sampled)")
   )) %>%
   mutate(n_retrieved = factor(
     n_retrieved,
-    labels = paste0(c(1, 10, 100), " models retrieved")
+    labels = c("1 instance retrieved", "10 instances retrieved", "100 instances retrieved")
   )) %>%
   ungroup()
 
@@ -372,19 +372,19 @@ data_plot_text <- data_plot %>%
 
 ggplot(data_plot, aes(mean_rating, rating))+
   geom_linerange(aes(xmin = min_rating, xmax = max_rating), color = "grey60", linewidth = 0.2)+
-  geom_point(color = "steelblue", shape = 1, size = 0.7, stroke = 0.4)+
+  geom_point(color = "steelblue", shape = 1, size = 0.6, stroke = 0.35)+
   geom_abline(slope = 1)+
   geom_text(data = data_plot_text, aes(mean_rating,rating, label= text), size = 2.5, hjust = 0)+
-  labs(x = "Maximum NSE of the retrieved models",
-       y = "NSE of the calibrated models")+
+  xlab((bquote(Assocation~r["i,j"]~of~retrieved~model~instance~of~each~catchment))) +
+  ylab((bquote(Assocation~r["i,j"]~of~calibrated~model~instance~of~each~catchment))) + 
   facet_grid(n_retrieved~n_probed)+
   scale_x_continuous(breaks = c(0:5)*2) +
   scale_y_continuous(breaks = c(2:5)*2) +
   coord_cartesian(xlim = c(0,10), ylim = c(4,10))+
   theme_bw(base_size = 9)
 
-ggsave(filename = "data/caravan_lookup.png", units = c("in"), width = 9, height = 5)
-ggsave(filename = "data/caravan_lookup.pdf", units = c("in"), width = 9, height = 5)
+ggsave(filename = "data/plot/fig_retrieve.png", width = 19, height = 12, units = "cm")
+ggsave(filename = "data/plot/fig_retrieve.pdf", width = 19, height = 12, units = "cm")
 
 
 
