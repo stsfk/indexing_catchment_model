@@ -7,33 +7,40 @@ pacman::p_load(tidyverse,
                zeallot,
                recosystem,
                hydroGOF,
-               caret,
-               tidymodels,
                mlrMBO,
-               DiceKriging,
-               rgenoud,
-               GA,
                ModelMetrics,
-               doParallel,
+               lhs,
+               DiceKriging,
+               parallel,
+               rgenoud,
                Rfast,
-               Rfast2)
+               doParallel,
+               GA,
+               caret)
 
 # seed --------------------------------------------------------------------
 
 set.seed(1234)
 
 nthread <- detectCores()
-cl <- makeCluster(nthread-1)
+cl <- makeCluster(nthread-2)
 registerDoParallel(cl)
 
-clusterEvalQ(cl, library(Rfast))
-clusterEvalQ(cl, library(tidyverse))
-clusterEvalQ(cl, library(GA))
+clusterEvalQ(cl, {
+  pacman::p_load(tidyverse,
+                 lubridate,
+                 zeallot,
+                 recosystem,
+                 GA,
+                 ModelMetrics,
+                 doParallel,
+                 Rfast,
+                 caret)
+})
 
 # data --------------------------------------------------------------------
 
-weights <- read_csv("./data/SM.csv",
-                    col_names = c("KGE", "NSE", "RMSE"))
+weights <- read_csv("./data/SM.csv", col_names = c("KGE", "NSE", "RMSE"))
 
 # 10 model classes in the dense data set
 model_class  <- c(
@@ -174,7 +181,8 @@ derive_PQ <- function(data_train, data_val) {
         lrate = lrate,
         niter = niter,
         verbose = F,
-        nthread = nthread # nbin = 4*nthread^2+1
+        nthread = nthread,
+        nbin = 2*nthread# nbin = 4*nthread^2+1
       )
     )
     
@@ -219,6 +227,7 @@ derive_PQ <- function(data_train, data_val) {
     show.info = TRUE
   )
   
+  # train on combined train_val_set
   r = Reco()
   
   opts <- run$x
@@ -287,10 +296,7 @@ prepare_Qs_for_look_up  <- function(Q, n_probed, train_portion, catchment_id_loo
   # Q_probed is further split into Q_train and Q_val for deriving the optimal number of iterations in GA
   # Q_test is the remaining models with unknown weight links with the look-up catchment.
   
-  # n_evalution: the number of links between Q and the look-up catchment with known weights
-  
-  model_id_probed <- sample(1:n_instances, n_probed) %>%
-    sort()
+  model_id_probed <- sample(1:n_instances, n_probed) %>% sort()
   
   Q_probed <- Q[model_id_probed,]
   
@@ -459,7 +465,7 @@ for (i in seq_along(train_folds)){
   # n_probed: the numbers of edges evaluated for estimating p
   
   eval_grid <- expand_grid(
-    probed_ratio = 0.5*1:4, # 0.5, 1, 1.5, and 2 times of the latent dimension
+    probed_ratio = c(0.5,1,2,4), # 0.5, 1, 2, and 4 times of the latent dimension
     catchment_id_look_up = catchment_id_look_ups,
     out = vector("list", 1)
   ) %>%
@@ -546,6 +552,7 @@ get_predicted_model_rating <- function(catchment_id_look_up, out){
     pull(actual_rating)
 }
 
+# get the actual model rating of the retrieved model
 eval_grid_expand <- eval_grid %>%
   mutate(
     predicted_model_rating = map2(catchment_id_look_up, out, get_predicted_model_rating)
@@ -562,15 +569,12 @@ eval_grid_expand %>%
     actual_best_model_rating = map_dbl(out, function(x) x$top100_actual$rating %>% max),
     hit1 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1]),
     hit10 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1:10]),
-    hit25 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1:25]),
     hit100 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id),
     diff1 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-x[1]),
     diff10 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:10])),
-    diff25 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:25])),
     diff100 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:100])),
     diff1p = diff1/actual_best_model_rating*100,
     diff10p = diff10/actual_best_model_rating*100,
-    diff25p = diff25/actual_best_model_rating*100,
     diff100p = diff100/actual_best_model_rating*100
     ) %>%
   group_by(train_fold_id,probed_ratio) %>%
