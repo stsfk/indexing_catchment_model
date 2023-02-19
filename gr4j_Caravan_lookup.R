@@ -375,8 +375,8 @@ ggplot(data_plot, aes(mean_rating, rating))+
   geom_point(color = "steelblue", shape = 1, size = 0.6, stroke = 0.35)+
   geom_abline(slope = 1)+
   geom_text(data = data_plot_text, aes(mean_rating,rating, label= text), size = 2.5, hjust = 0)+
-  xlab((bquote(Assocation~r["i,j"]~of~retrieved~model~instance~of~each~catchment))) +
-  ylab((bquote(Assocation~r["i,j"]~of~calibrated~model~instance~of~each~catchment))) + 
+  xlab((bquote(Assocation~r["i,j"]~value~between~retrieved~model~instance~and~a~catchment))) +
+  ylab((bquote(Assocation~r["i,j"]~value~between~calibrated~model~instance~and~a~catchment))) + 
   facet_grid(n_retrieved~n_probed)+
   scale_x_continuous(breaks = c(0:5)*2) +
   scale_y_continuous(breaks = c(2:5)*2) +
