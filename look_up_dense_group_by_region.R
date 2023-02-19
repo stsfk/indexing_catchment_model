@@ -16,7 +16,7 @@ pacman::p_load(tidyverse,
                Rfast,
                doParallel,
                GA,
-               caret)
+               sf)
 
 # seed --------------------------------------------------------------------
 
@@ -40,6 +40,38 @@ clusterEvalQ(cl, {
 
 # data --------------------------------------------------------------------
 
+# catchment locations
+data_camels <- read_csv("./data/CAMELS_US.csv")
+selected_catchment_ids <- data_camels$catchment_id %>% unique()
+
+camels_topo <-
+  read_delim(
+    "./data/camels_topo.txt",
+    delim = ";"
+  ) %>%
+  select(gauge_id, gauge_lat, gauge_lon)
+
+catchment_points <- tibble(
+  gauge_id = selected_catchment_ids
+) %>%
+  left_join(camels_topo, by = "gauge_id") %>%
+  st_as_sf(coords = c("gauge_lon","gauge_lat"), remove = F) 
+
+st_crs(catchment_points) <-  st_crs("EPSG:4326")
+st_write(catchment_points, dsn="./data/catchment_points/points.shp",delete_dsn = T)
+
+geophysio <- st_read("./data/physio_shp/physio.shp") %>%
+  st_make_valid(geophysio) %>%
+  select(DIVISION)
+
+catchment_points <- catchment_points %>% st_transform(st_crs(geophysio))
+
+polygon_ids <- catchment_points %>% st_within(geophysio) %>% unlist()
+polygon_DIVISION <- geophysio %>% st_drop_geometry() %>% pull(DIVISION)
+catchment_points <- catchment_points %>% 
+  mutate(DIVISION = polygon_DIVISION[polygon_ids])
+
+# read association data
 weights <- read_csv("./data/SM.csv", col_names = c("KGE", "NSE", "RMSE"))
 
 # 10 model classes in the dense data set
@@ -82,10 +114,20 @@ data_process <- data_raw %>%
   rename(rating = NNSE) %>%
   mutate(record_id = 1:n())
 
+
 # Function ----------------------------------------------------------------
 
-#  Splitting with important groups, i.e., catchment_id
-train_folds <- groupKFold(data_process$catchment_id, k = 10)
+#  Splitting by geophysio. regions
+catchment_groups <- catchment_points %>% 
+  st_drop_geometry() %>%
+  mutate(catchment_id = 1:n()) %>%
+  group_by(DIVISION) %>%
+  summarise(catchment_ids = list(catchment_id))
+
+train_folds <-
+  lapply(catchment_groups$catchment_ids, function(x)
+    data_process %>% filter(!(catchment_id %in% x)) %>% pull(record_id))
+
 
 base_look_up_split <- function(train_fold){
   # This function splits data_process into a data set for building recommender system,
@@ -283,11 +325,6 @@ p_r2 <- function(p, Q, rating) {
 p_at_k <- function(pred, actual, k = 1) {
   # compute precision at K
   sum(pred$model_id[1:k] %in% actual$model_id[1:k]) / k
-}
-
-mean_diff_at_k <- function(pred, actual, k = 1) {
-  # difference in mean ranking
-  mean(pred$rating[1:k]) - mean(actual$rating[1:k])
 }
 
 prepare_Qs_for_look_up  <- function(Q, n_probed, train_portion, catchment_id_look_up){
@@ -498,7 +535,7 @@ for (i in seq_along(train_folds)){
 eval_grid <- eval_grids %>%
   bind_rows()
 
-save(Ps, Qs, train_folds, eval_grid, file = "./data/dense_look_up.Rda")
+save(Ps, Qs, train_folds, eval_grid, file = "./data/dense_look_up_geo.Rda")
 
 # stop
 stopCluster(cl)
@@ -507,7 +544,7 @@ stopCluster(cl)
 
 # Analysis ----------------------------------------------------------------
 
-load("./data/dense_look_up.Rda")
+load("./data/dense_look_up_geo.Rda")
 
 catchment_lookup_groups <- lapply(train_folds,
                                   function(x)
