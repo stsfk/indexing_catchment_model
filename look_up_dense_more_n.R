@@ -507,6 +507,13 @@ stopCluster(cl)
 # Analysis ----------------------------------------------------------------
 
 load("./data/dense_look_up.Rda")
+eval_grid1 <- eval_grid
+
+load("./data/dense_look_up_updated.Rda")
+eval_grid2 <- eval_grid
+
+eval_grid <- eval_grid1 %>% bind_rows(eval_grid2)%>%
+  filter(probed_ratio != 1.5)
 
 catchment_lookup_groups <- lapply(train_folds,
                                   function(x)
