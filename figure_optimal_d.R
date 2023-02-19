@@ -92,10 +92,10 @@ ggplot(data_plot2, aes(dims, r2, color = dataset, shape = dataset)) +
   scale_x_continuous(breaks = c(0,20,40,60,80,100))+
   scale_color_manual(values = c("#377eb8", "#e41a1c", "#4daf4a"))+
   scale_shape(solid = FALSE)+
-  labs(y = "R²",
-       x = "Optimal number of dimensions of latent factor vectors",
+  labs(x = "Optimal number of dimensions of latent factor space",
        color = "Data set",
        shape = "Data set") +
+  ylab((bquote(R^2))) 
   theme_bw(base_size = 9) +
   theme(legend.position = "top")
 
