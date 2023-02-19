@@ -210,10 +210,10 @@ ggplot(data_plot, aes(mean_rating_random, mean_rating, color = n_retrieved, shap
   facet_wrap(~n_probed)+
   scale_color_manual(values = c("#377eb8", "#e41a1c", "#4daf4a"))+
   scale_shape(solid = FALSE)+
-  labs(color = "Number of model(s) retrieved/randomly sampled",
-       shape = "Number of model(s) retrieved/randomly sampled") +
-  xlab((bquote(Assocation~r["i,j"]~value~between~randomly~sampled~model~instance~and~a~catchment))) +
-  ylab((bquote(Assocation~r["i,j"]~value~between~retrieved~model~instance~and~a~catchment))) + 
+  labs(color = "Number of model(s) retrieved/randomly selected",
+       shape = "Number of model(s) retrieved/randomly selected") +
+  xlab((bquote(Assocation~r["i,j"]~between~randomly~selected~model~instance~and~a~catchment))) +
+  ylab((bquote(Assocation~r["i,j"]~between~retrieved~model~instance~and~a~catchment))) + 
   theme_bw(9)+
   theme(legend.position = "top")
 
@@ -251,10 +251,10 @@ ggplot(data_plot, aes(max_rating_random, max_rating, color = n_retrieved, shape 
   facet_wrap(~n_probed)+
   scale_color_manual(values = c("#377eb8", "#e41a1c", "#4daf4a"))+
   scale_shape(solid = FALSE)+
-  labs(color = "Number of model(s) retrieved/randomly sampled",
-       shape = "Number of model(s) retrieved/randomly sampled") +
-  xlab((bquote(Maximum~assocation~r["i,j"]~value~between~randomly~sampled~model~instance~and~a~catchment))) +
-  ylab((bquote(Maximum~assocation~r["i,j"]~value~between~retrieved~model~instance~and~a~catchment))) + 
+  labs(color = "Number of model(s) retrieved/randomly selected",
+       shape = "Number of model(s) retrieved/randomly selected") +
+  xlab((bquote(Maximum~assocation~r["i,j"]~between~randomly~selected~model~instance~and~a~catchment))) +
+  ylab((bquote(Maximum~assocation~r["i,j"]~between~retrieved~model~instance~and~a~catchment))) + 
   theme_bw(9)+
   theme(legend.position = "top")
 

@@ -92,11 +92,11 @@ ggplot(data_plot2, aes(dims, r2, color = dataset, shape = dataset)) +
   scale_x_continuous(breaks = c(0,20,40,60,80,100))+
   scale_color_manual(values = c("#377eb8", "#e41a1c", "#4daf4a"))+
   scale_shape(solid = FALSE)+
-  labs(x = "Optimal number of dimensions of latent factor space",
+  labs(x = expression(paste("Optimal latent factor dimension ", italic("d"))),
        color = "Data set",
        shape = "Data set") +
-  ylab((bquote(R^2))) 
-  theme_bw(base_size = 9) +
+  ylab((bquote(R^2))) +
+  theme_bw(base_size = 10) +
   theme(legend.position = "top")
 
 ggsave(filename = "./data/plot/fig_optimal_d.pdf", width = 19, height = 10, units = "cm")
