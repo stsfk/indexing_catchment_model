@@ -61,7 +61,7 @@ Sys.time() - sta
 
 # compute distance
 x_y_pairs <- x_y_pairs %>%
-  mutate(dist = dist)
+  mutate(dist = unlist(dist))
 
 # expand
 x_y_pairs2 <- tibble(
@@ -124,7 +124,7 @@ data_process <- tibble(
 for (i in 1:nrow(dist_m)){
   data_process$ranks[[i]] <- tibble(
     catchment_id = 1:1066,
-    ranks= (dist_m[i,] %>% rank()) - 1)
+    ranks = (dist_m[i,] %>% rank()) - 1)
 }
 
 data_process <- data_process %>%
@@ -146,4 +146,15 @@ catchment_points_with_rank <- catchment_points %>%
 data_plot %>% count(rank_interval)
 
 st_write(catchment_points_with_rank, dsn="./data/catchment_points/points_with_rank.shp",delete_dsn = T)
+
+
+ggplot(data_plot, aes(rank))+
+  geom_histogram(bins = 35)+
+  scale_x_continuous(breaks = c(0:5)*200)+
+  labs(title="Histogram of self-similarity score",
+       x = "Self-similarity score")+
+  theme_minimal()
+
+library(svglite)
+ggsave(filename = "data/plot/rank_hist.svg", width = 5, height = 1.5, units = "in")
 
