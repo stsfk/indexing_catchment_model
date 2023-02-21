@@ -8,67 +8,62 @@ pacman::p_load(tidyverse,
                doParallel,
                Rfast,
                Rfast2,
-               sf)
+               sf,
+               furrr)
 
-cl <- makeCluster(detectCores()-2)
-registerDoParallel(cl)
-
-clusterEvalQ(cl, library(Rfast))
-clusterEvalQ(cl, library(Rfast2))
+cl <- makeCluster(6)
+# registerDoParallel(cl)
+# 
+# clusterEvalQ(cl, library(Rfast))
+# clusterEvalQ(cl, library(Rfast2))
 
 # data --------------------------------------------------------------------
 
 P <- read.table("./data/camels_mat_P_1.txt") %>% data.matrix()
 Q <- read.table("./data/camels_mat_Q_1.txt") %>% data.matrix()
-
+n_samples <- 500000
+input_dim <- dim(P)[2]
 # functions ---------------------------------------------------------------
 
-compute_distance <- function(x, y, LB, UB, n_samples){
-  # This function computes the expected distance between x and y, where each dimension is scaled by a random vector
-  # the Manhattan distance is computed
-  
-  # dimension of vector x
-  input_dim <- length(x)
-  range <- UB - LB
-  variation <- x - y
-  
-  # generate uniformly distributed random numbers of size n_samples*input_dim
-  M <- matrix(Rfast2::Runif(n = n_samples*input_dim), ncol = input_dim)
-  # scale the random matrix
-  M <- Rfast::eachrow(M, range*variation, "*")
-  # adding a base
-  M <- Rfast::eachrow(M, variation*LB, "+")
-  
-  # compute the sum of each row to get sample distance, mean and abs to get the average distance
-  mean(abs(Rfast::rowsums(M)))
-}
-
-# compute distance metrics ------------------------------------------------
+# generate uniformly distributed random numbers of size n_samples*input_dim
+random_M <- matrix(Rfast2::Runif(n = n_samples*input_dim), ncol = input_dim)
 
 LB <- apply(Q, 2, min)
 UB <- apply(Q, 2, max)
+
+random_M <- Rfast::eachrow(random_M, (UB - LB), "*")
+# adding a base
+random_M <- Rfast::eachrow(random_M, LB, "+")
+
+R <- P %*% t(random_M)
+
+# compute distance metrics ------------------------------------------------
 
 n_catchments <- 533*2 
 x_y_pairs <- expand_grid(x=1:n_catchments, y=1:n_catchments) %>%
   filter(x < y)
 
-compute_distance_wrapper <- function(i, n_samples=500000){
-  compute_distance(
-    x = P[x_y_pairs$x[[i]],],
-    y = P[x_y_pairs$y[[i]],],
-    LB,
-    UB,
-    n_samples = n_samples
-  )
+compute_distance <- function(i){
+  
+  x = x_y_pairs$x[[i]]
+  y = x_y_pairs$y[[i]]
+  
+  mean(abs(R[x,]-R[y,]))
 }
 
-dist <- foreach(i=1:nrow(x_y_pairs)) %dopar% 
-  compute_distance_wrapper(i) %>%
-  unlist()
+clusterExport(cl, "compute_distance")
+clusterExport(cl, "x_y_pairs")
+clusterExport(cl, "R")
 
+sta <- Sys.time()
+dist <- parLapply(cl, 1:nrow(x_y_pairs), function(x) compute_distance(x))
+Sys.time() - sta
+
+# compute distance
 x_y_pairs <- x_y_pairs %>%
   mutate(dist = dist)
 
+# expand
 x_y_pairs2 <- tibble(
   x = x_y_pairs$y,
   y = x_y_pairs$x,
