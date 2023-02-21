@@ -58,7 +58,7 @@ catchment_points <- tibble(
   st_as_sf(coords = c("gauge_lon","gauge_lat"), remove = F) 
 
 st_crs(catchment_points) <-  st_crs("EPSG:4326")
-st_write(catchment_points, dsn="./data/catchment_points/points.shp",delete_dsn = T)
+#st_write(catchment_points, dsn="./data/catchment_points/points.shp",delete_dsn = T)
 
 geophysio <- st_read("./data/physio_shp/physio.shp") %>%
   st_make_valid(geophysio) %>%
@@ -269,15 +269,25 @@ derive_PQ <- function(data_train, data_val) {
     show.info = TRUE
   )
   
-  # train on combined train_val_set
-  r = Reco()
-  
-  opts <- run$x
-  opts$nthread <- nthread
-  opts$verbose <- F
-  r$train(train_val_set, opts = opts)
-  
-  c(P, Q) %<-% r$output(out_memory(), out_memory())
+  # check if r2 is NA; if so, run matrix factorization again
+  okay_result <- FALSE
+  while (!okay_result){
+    # train on combined train_val_set
+    r = Reco()
+    
+    opts <- run$x
+    opts$nthread <- nthread
+    opts$verbose <- F
+    r$train(train_val_set, opts = opts)
+    
+    c(P, Q) %<-% r$output(out_memory(), out_memory())
+    
+    if (sum(Q, na.rm = T)!=0){
+      okay_result <- TRUE
+    }
+    
+    gc()
+  }
   
   list(P = P, Q = Q)
 }
