@@ -240,7 +240,7 @@ eval_grid <- expand_grid(
   r2 = 0,
   rmse = 0,
   out = vector("list",1),
-  repeats = c(1:10)
+  repeats = c(1:1)
 )
 
 sta_time <- Sys.time()
@@ -265,12 +265,11 @@ for (i in 1:nrow(eval_grid)){
   eval_grid$rmse[[i]] <- temp$rmse
   
 }
-
 end_time <- Sys.time()
 
 end_time - sta_time
 
-save(eval_grid, "./data/gr4j_camels_factorization.Rda")
+save(eval_grid, file = "./data/gr4j_camels_factorization.Rda")
 
 # Post processing ---------------------------------------------------------
 
