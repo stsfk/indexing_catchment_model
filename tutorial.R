@@ -20,13 +20,13 @@ set.seed(12345)
 # data --------------------------------------------------------------------
 
 # load gr4j parameters
-paras <- read.table("./data/gr4jparas.txt", header = FALSE, sep = " ") %>% data.matrix()
+paras <- read.table("./gr4jparas.txt", header = FALSE, sep = " ") %>% data.matrix()
 
 n_instances <- nrow(paras)
 
 # load PQ data
-P <- read.table("./data/mat_P_1.txt", header = FALSE, sep = " ") %>% data.matrix()
-Q <- read.table("./data/mat_Q_1.txt", header = FALSE, sep = " ") %>% data.matrix()
+P <- read.table("./mat_P_1.txt", header = FALSE, sep = " ") %>% data.matrix()
+Q <- read.table("./mat_Q_1.txt", header = FALSE, sep = " ") %>% data.matrix()
 
 latent_dim <- dim(Q)[2]
 
@@ -97,7 +97,7 @@ para_ids_gof <- function(selected_para_ids){
 }
 
 prepare_Qs_for_retrieval  <- function(n_probed, train_portion){
-  # This function split Q into Q_probed, Q_train, Q_val
+  # This function splits Q into Q_probed, Q_train, Q_val
   # weights of the links between the look-up catchment and the models associated with Q_probed is known
   # Q_probed is further split into Q_train and Q_val for deriving the optimal number of iterations in GA
 
@@ -280,6 +280,8 @@ p1 +
     hjust = 0,
     text = paste0("NSE of retrieved model = ", round(retrieved_nse,3))
   )
+
+ggsave(filename = "./data/plot/fig_tutorial.png", width = 15, height = 8, unit = "cm")
 
 ggsave(filename = "./data/plot/fig_tutorial.pdf", width = 15, height = 8, unit = "cm")
 
