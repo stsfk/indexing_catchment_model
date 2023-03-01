@@ -257,11 +257,11 @@ data_plot <- tibble(
 p1 <- data_plot %>% 
   gather(item, value, -date) %>%
   ggplot(aes(date, value, color = item, linetype = item))+
-  geom_line()+
+  geom_line(size = 0.25)+
   labs(color = "",
        linetype = "",
        y = "Flow [mm/day]") +
-  theme_bw()+
+  theme_bw(base_size = 10)+
   theme(legend.position = "top",
         axis.title.x = element_blank())
   
@@ -269,16 +269,17 @@ p1 +
   cowplot::draw_text(
     x = ymd("1990-01-01"),
     y = 19,
-    size = 12,
+    size = 10,
     hjust = 0,
     text = paste0("NSE of calibrated model = ", round(calibrated_nse,3))
   )+
   cowplot::draw_text(
     x = ymd("1990-01-01"),
     y = 17.5,
-    size = 12,
+    size = 10,
     hjust = 0,
     text = paste0("NSE of retrieved model = ", round(retrieved_nse,3))
   )
 
+ggsave(filename = "./data/plot/fig_tutorial.pdf", width = 15, height = 8, unit = "cm")
 

@@ -395,13 +395,16 @@ data_plot<-lapply(c(1,10,100), prepare_data_plot) %>%
   ungroup()
 
 data_plot %>%
+  mutate(max_rating = (2*max_rating-10)/max_rating) %>%
   filter(n_probed == 148, n_retrieved == 100) %>%
-  ggplot(aes(max_rating, rating))+
-  geom_point(color = "steelblue")+
+  ggplot(aes(max_rating, nse))+
+  geom_point(color = "steelblue", shape = 1)+
   geom_abline(slope = 1)+
-  labs(x = "Maximum NSE of the retrieved models",
-       y = "NSE of the calibrated models")
+  labs(x = "NSE of the retrieved models",
+       y = "NSE of the calibrated models")+
+  theme_bw(base_size = 8)
 
-
+ggsave(filename = "data/plot/fig_retrieved_vs_calibrated.pdf", width = 10, height = 10, units = "cm")
+ 
 
 
