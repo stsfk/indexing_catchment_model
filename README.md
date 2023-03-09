@@ -1,1 +1,1 @@
-This repo contains the code for paper "Profiling and pairing catchments and hydrological models with latent factor model". A short tutorial is provided.
+This repo contains the code for paper "Profiling and pairing catchments and hydrological models with latent factor model". A short tutorial is provided. A user's manual can be found [here](https://github.com/stsfk/indexing_catchment_model/blob/main/user_manual.pdf).
