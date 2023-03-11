@@ -12,19 +12,19 @@ pacman::p_load(
 )
 
 
-# Read time series data ---------------------------------------------------
 
+# Data --------------------------------------------------------------------
+# Read contiguous US map
 contiguous_us <- us_states() %>% filter(!(name %in% c("Alaska", "Hawaii", "Puerto Rico"))) %>% st_union()
-
+# Read non-US catchement IDs
 not_us_catchments <- st_read("./data/Caravan/caravan_not_us_catchments.shp") %>% pull(gauge_id)
 
-
 # filter out catchments contained in CAMELS
-
 collection_names <- dir("./data/Caravan/timeseries/csv/")
 ts_filename <- lapply(collection_names, function(x) paste0("./data/Caravan/timeseries/csv/", x)) %>%
   lapply(dir)
 
+# give name to each catchment, i.e., "data collection"_"catchment name"
 all_catchments <- lapply(collection_names, function(x) paste0("./data/Caravan/timeseries/csv/", x)) %>%
   lapply(dir) %>%
   unlist() %>%
@@ -52,7 +52,7 @@ data_ts %>% count(catchment_id) %>% arrange(desc(n)) # catchment 208009 and 2700
 data_ts %>%
   filter(catchment_id %in% c("208009", "27001")) # not the same catchments, just the same name
 
-# read data
+# read time series data
 data_ts <- data_ts %>%
   mutate(data = map(path, read_csv, show_col_types = FALSE))
 
@@ -62,6 +62,7 @@ data_ts <- data_ts %>%
 
 # Filtering meteorological forcing  ---------------------------------------
 
+# select and rename the variables
 data_raw <- data_ts %>%
   mutate(data = purrr::map(data, function(x)
     x %>% dplyr::select(
@@ -137,14 +138,11 @@ data_process <- data_process %>%
   filter(date > ymd("1981-01-01"),
          date < ymd("2020-12-31"))
 
-# training and validation from 1981-01-01 to 2010-12-31, where data until 2000-12-31 is for training
-# testing from 2011-01-01 to 2020-12-31
-
+# data from 1981-01-01 to 2010-12-31 is interested
 # all the forcing data is available, some of the flow data is missing
 # catchments with missing Q records is stored in `incomplete_catchments`
 
-minimal_required_Q_length = 365*10
-
+minimal_required_Q_length = 365*10 # at least 10 years of data is needed
 
 incomplete_catchments <- data_process %>%
   filter(date >= ymd("1989-01-01"),
