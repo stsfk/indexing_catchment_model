@@ -1,3 +1,6 @@
+# This code uses the method presented in Gnann, S. (2022, April). Sebastiangnann/camels_matlab: First release. Zenodo. 
+# Rerieved from https://doi.org/10.5281/zenodo.6462821 doi: 10.5281/ zenodo.6462821
+
 if (!require("pacman")) {
   install.packages("pacman")
 }
@@ -50,7 +53,7 @@ read_streamflow <- function(fpath) {
     arrange(date)
 }
 
-# read catchment discharge
+# read catchment discharge, there are 674 catchments with Q series, however only 671 included in camels 
 catchment_discharge <-
   tibble(
     subfolder = dir(
@@ -69,7 +72,7 @@ catchment_discharge <-
   dplyr::select(discharge) %>%
   unnest(discharge)
 
-
+# normalize by catchment area
 Q <- catchment_discharge %>%
   left_join(camels_topo %>% select(catchment_id = gauge_id, area_gages2), by = c("catchment_id")) %>%
   mutate(discharge = discharge * 24 * 3600 * 0.0283168466/(area_gages2 * 1000000) * 1000) %>%# CFS to to ft3 to m3 divided by m2 to mm
@@ -123,7 +126,6 @@ forcing <- tibble(
 
 
 # Adjust PET --------------------------------------------------------------
-
 
 read_pet_coef <- function(fname) {
   fname %>%
@@ -186,11 +188,11 @@ data_process <- all_data %>%
   filter(catchment_id %in% selected_catchments,
          date %within% selected_interval)
 
-# keep catchments contains 7669 days of record
+# keep catchments contains 8035 days of record
 selected_catchments <- data_process %>%
   group_by(catchment_id) %>%
-  summarise(first_day = first(date),
-            last_day = last(date)) %>%
+  summarise(first_day = min(date),
+            last_day = max(date)) %>%
   mutate(length = as.numeric(last_day - first_day)) %>%
   filter(length == interval_length) %>%
   pull(catchment_id)
