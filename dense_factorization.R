@@ -17,52 +17,9 @@ set.seed(1234)
 nthread <- 10 # number of CPU thread
 
 # data --------------------------------------------------------------------
-
-weights <- read_csv("./data/SM.csv",
-                    col_names = c("KGE", "NSE", "RMSE"))
-
-# 10 model classes in the dense data set
-model_class  <- c(
-  'm_01_collie1_1p_1s',
-  'm_05_ihacres_7p_1s',
-  'm_07_gr4j_4p_2s',
-  'm_13_hillslope_7p_2s',
-  'm_18_simhyd_7p_3s',
-  'm_22_vic_10p_3s',
-  'm_27_tank_12p_4s',
-  'm_28_xinanjiang_12p_4s',
-  'm_34_flexis_12p_5s',
-  'm_37_hbv_15p_5s'
-)
-
-n_catchments <- 533
-n_model_classes <- length(model_class)
-n_model_instances <-  nrow(weights)/n_catchments/n_model_classes # number of instance of each model class
-
-# assign catchment id and model instance id to each row
-catchment_id <- rep(1:n_catchments, each = n_model_instances)
-data_raw <- weights %>%
-  bind_cols(expand_grid(model_class, catchment_id)) %>%
-  mutate(
-    instance_id = rep(1:n_model_instances, n() / n_model_instances),
-    model_id = paste(model_class, instance_id, sep = "_"),
-    model_id = factor(model_id, levels = unique(model_id)),
-    model_id = as.integer(model_id) # assign a unique id to each model
-  ) %>%
-  select(model_class, catchment_id, model_id, KGE, NSE, RMSE)
-
-# normalizing NSE on a scale from 0 to 10
-data_process <- data_raw %>%
-  mutate(NNSE = 1 / (2 - NSE) * 10) %>%
-  dplyr::select(catchment_id,
-                model_id,
-                NNSE) %>%
-  rename(rating = NNSE) %>%
-  mutate(record_id = 1:n()) # give each row a unique ID
-
+data_process <- read_csv("data/processed_dense_dataset.csv")
 
 # Functions ---------------------------------------------------------------
-
 
 prepare_modeling_data <-
   function(frac = 1,
@@ -73,7 +30,7 @@ prepare_modeling_data <-
     # frac: the fraction of samples in the data set used in modeling
     # train_portion, val_portion, and test_portion of the subset of the data are used for different roles.
     
-    # Creating a subset of "data_process" for modeling
+    # Creating a subset of "data_process" for modeling, correspond to data sets of different density
     data_sample <- data_process %>%
       group_by(model_id) %>%
       sample_frac(frac) %>%
@@ -304,6 +261,3 @@ eval_grid$r2 %>% var(na.rm = T)
 
 eval_grid$rmse %>% mean(na.rm = T)
 eval_grid$rmse %>% var(na.rm = T)
-
-# plot --------------------------------------------------------------------
-
