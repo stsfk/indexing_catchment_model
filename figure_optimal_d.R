@@ -53,7 +53,6 @@ data_plot <- data_dens_whole %>%
 
 save(data_plot, file = "./data/optimal_d.Rda")
 
-
 # Plot --------------------------------------------------------------------
 
 load("./data/optimal_d.Rda")
@@ -124,3 +123,4 @@ ggplot(data_plot, aes(dataset, dims, fill = density)) +
        y = "Optimal dimension of latent factor vectors",
        fill = "Density")+
   theme_bw()
+
