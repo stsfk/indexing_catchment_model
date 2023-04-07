@@ -65,11 +65,11 @@ for (i in seq_along(catchment_ids)){
                                      FUN_MOD = RunModel_GR4J)
 }
 
-save(OutputsCalibs, file = "OutputsCalibs.Rda")
+save(OutputsCalibs, file = "data/OutputsCalibs.Rda")
 
+
+# check results -----------------------------------------------------------
 
 sapply(OutputsCalibs, function(x) x$CritFinal) %>% hist()
 
 sapply(OutputsCalibs, function(x) x$NRuns) %>% hist()
-
-
