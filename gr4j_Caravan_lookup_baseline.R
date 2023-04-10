@@ -61,7 +61,7 @@ get_catchment_gof <- function(selected_catchment_id, selected_para_ids, selected
   
   
   OutputsCrit_wrapper <- function(i){
-    Param = selected_paras[i,]
+    Param <- selected_paras[i,]
     
     OutputsModel <- RunModel_GR4J(InputsModel = InputsModel, RunOptions = RunOptions, Param = Param)
     OutputsCrit <- ErrorCrit(InputsCrit = InputsCrit, OutputsModel = OutputsModel, verbose = FALSE)
@@ -96,7 +96,8 @@ for (i in 1:nrow(eval_grid_random_sample)){
   selected_catchment_id <- eval_grid_random_sample$catchment_id[[i]]
   n_samples <- eval_grid_random_sample$n_samples[[i]]
   
-  selected_para_ids_list <- lapply(1:n_repeats, function(x) sample(1:1e6, n_samples))
+  # select n_samples sets of parameters from 1e6 sets of parameters
+  selected_para_ids_list <- lapply(1:n_repeats, function(x) sample(1:1e6, n_samples)) 
   
   temp_results <- vector("list", n_repeats) # temporary store results
   for (j in 1:n_repeats){
@@ -148,13 +149,13 @@ calibrated_NSE <- tibble(
 
 prepare_data_plot <- function(n_retrieved){
   data_plot <- eval_grid %>%
-    dplyr::filter(!is.null(results)) %>%
     unnest(cols = c(results)) %>%
     filter(rank %in% c(1:n_retrieved)) %>%
     mutate(rating = 1 / (2 - nse) * 10) %>%
     group_by(catchment_id, repeats, n_probed) %>%
     summarise(retr_rating = max(rating)) 
   
+  # summarizing results for different repeats
   data_plot %>%
     group_by(catchment_id, n_probed) %>%
     summarise(
@@ -180,10 +181,12 @@ eval_grid_random_sample_processed <- eval_grid_random_sample %>%
     max_rating_random = 1 / (2 - max_rating_random) * 10,
     mean_rating_random = 1 / (2 - mean_rating_random) * 10
   )
-  
+
+# prepare data from retrieval experiments  
 data_plot<-lapply(c(1,10,100), prepare_data_plot) %>%
   bind_rows()
 
+# joining data from retrieval experiments with data from random sampling experiments
 data_plot <- data_plot %>%
   left_join(eval_grid_random_sample_processed, by = c("catchment_id", "n_retrieved"))
 
@@ -210,8 +213,8 @@ ggplot(data_plot, aes(mean_rating_random, mean_rating, color = n_retrieved, shap
   facet_wrap(~n_probed)+
   scale_color_manual(values = c("#377eb8", "#e41a1c", "#4daf4a"))+
   scale_shape(solid = FALSE)+
-  labs(color = "Number of model(s) retrieved/randomly selected",
-       shape = "Number of model(s) retrieved/randomly selected") +
+  labs(color = "Number of instance(s) retrieved/randomly selected",
+       shape = "Number of instance(s) retrieved/randomly selected") +
   xlab((bquote(Assocation~r["i,j"]~between~randomly~selected~model~instance~and~a~catchment))) +
   ylab((bquote(Assocation~r["i,j"]~between~retrieved~model~instance~and~a~catchment))) + 
   theme_bw(9)+
@@ -230,8 +233,8 @@ ggplot(data_plot, aes(mean_rating_random, rating, color = n_retrieved, shape = n
   facet_wrap(~n_probed)+
   scale_color_manual(values = c("#377eb8", "#e41a1c", "#4daf4a"))+
   scale_shape(solid = FALSE)+
-  labs(color = "Number of model(s) randomly sampled",
-       shape = "Number of model(s) randomly sampled") +
+  labs(color = "Number of instance(s) randomly sampled",
+       shape = "Number of instance(s) randomly sampled") +
   xlab((bquote(Assocation~r["i,j"]~value~between~randomly~sampled~model~instance~and~a~catchment))) +
   ylab((bquote(Assocation~r["i,j"]~value~between~calibrated~model~instance~and~a~catchment))) + 
   theme_bw(9)+
@@ -251,8 +254,8 @@ ggplot(data_plot, aes(max_rating_random, max_rating, color = n_retrieved, shape 
   facet_wrap(~n_probed)+
   scale_color_manual(values = c("#377eb8", "#e41a1c", "#4daf4a"))+
   scale_shape(solid = FALSE)+
-  labs(color = "Number of model(s) retrieved/randomly selected",
-       shape = "Number of model(s) retrieved/randomly selected") +
+  labs(color = "Number of instance(s) retrieved/randomly selected",
+       shape = "Number of instance(s) retrieved/randomly selected") +
   xlab((bquote(Maximum~assocation~r["i,j"]~between~randomly~selected~model~instance~and~a~catchment))) +
   ylab((bquote(Maximum~assocation~r["i,j"]~between~retrieved~model~instance~and~a~catchment))) + 
   theme_bw(9)+
