@@ -40,47 +40,10 @@ clusterEvalQ(cl, {
 
 # data --------------------------------------------------------------------
 
-weights <- read_csv("./data/SM.csv", col_names = c("KGE", "NSE", "RMSE"))
+data_process <- read_csv("data/processed_dense_dataset.csv")
 
-# 10 model classes in the dense data set
-model_class  <- c(
-  'm_01_collie1_1p_1s',
-  'm_05_ihacres_7p_1s',
-  'm_07_gr4j_4p_2s',
-  'm_13_hillslope_7p_2s',
-  'm_18_simhyd_7p_3s',
-  'm_22_vic_10p_3s',
-  'm_27_tank_12p_4s',
-  'm_28_xinanjiang_12p_4s',
-  'm_34_flexis_12p_5s',
-  'm_37_hbv_15p_5s'
-)
-
-n_catchments <- 533
-n_model_classes <- length(model_class)
-n_instances_per_class <-  nrow(weights)/n_catchments/n_model_classes # number of instance of each model class
-n_instances <- n_model_classes *n_instances_per_class
-
-# assign catchment id and model instance id to each row
-catchment_id <- rep(1:n_catchments, each = n_instances_per_class)
-data_raw <- weights %>%
-  bind_cols(expand_grid(model_class, catchment_id)) %>%
-  mutate(
-    instance_id = rep(1:n_instances_per_class, n() / n_instances_per_class),
-    model_id = paste(model_class, instance_id, sep = "_"),
-    model_id = factor(model_id, levels = unique(model_id)),
-    model_id = as.integer(model_id) # assign a unique id to each model
-  ) %>%
-  select(model_class, catchment_id, model_id, KGE, NSE, RMSE)
-
-# normalizing NSE on a scale from 0 to 10
-data_process <- data_raw %>%
-  mutate(NNSE = 1 / (2 - NSE) * 10) %>%
-  dplyr::select(catchment_id,
-                model_id,
-                NNSE) %>%
-  rename(rating = NNSE) %>%
-  mutate(record_id = 1:n())
+n_catchments <- data_process$catchment_id %>% unique() %>% length()
+n_instances <- data_process$model_id %>% unique() %>% length()
 
 # Function ----------------------------------------------------------------
 
@@ -88,8 +51,8 @@ data_process <- data_raw %>%
 train_folds <- groupKFold(data_process$catchment_id, k = 10)
 
 base_look_up_split <- function(train_fold){
-  # This function splits data_process into a data set for building recommender system,
-  # and a data set for look up experiments
+  # This function splits data_process into a data set for building recommender systems,
+  # and a data set for retrieval (look up) experiments
   
   data_base <- data_process[train_fold,]
   data_look_up <- data_process[-train_fold,]
@@ -182,7 +145,7 @@ derive_PQ <- function(data_train, data_val) {
         niter = niter,
         verbose = F,
         nthread = nthread,
-        nbin = 2*nthread# nbin = 4*nthread^2+1
+        nbin = 2*nthread # nbin = 4*nthread^2+1
       )
     )
     
@@ -232,6 +195,7 @@ derive_PQ <- function(data_train, data_val) {
   
   opts <- run$x
   opts$nthread <- nthread
+  opts$nbin <- 2*nthread
   opts$verbose <- F
   r$train(train_val_set, opts = opts)
   
@@ -259,7 +223,7 @@ derive_PQ_wrapper <- function(data_base){
 
 fn_factory <- function(Q, rating) {
   function(x) {
-    # This function computes the predicted
+    # This function computes the RMSE of predicted ratings
     pred <- Rfast::eachrow(Q, x, "*")
     pred <- Rfast::rowsums(pred)
     
@@ -278,16 +242,6 @@ p_r2 <- function(p, Q, rating) {
   # This function computes the R-squared of predicted ratings of models specified by Q
   # the target rating is `rating`
   cor(p %*% t(Q) %>% as.vector(), rating) ^ 2
-}
-
-p_at_k <- function(pred, actual, k = 1) {
-  # compute precision at K
-  sum(pred$model_id[1:k] %in% actual$model_id[1:k]) / k
-}
-
-mean_diff_at_k <- function(pred, actual, k = 1) {
-  # difference in mean ranking
-  mean(pred$rating[1:k]) - mean(actual$rating[1:k])
 }
 
 prepare_Qs_for_look_up  <- function(Q, n_probed, train_portion, catchment_id_look_up){
@@ -463,7 +417,6 @@ for (i in seq_along(train_folds)){
   c(P, Q, record_id_train, record_id_val) %<-% derive_PQ_wrapper(data_base)
 
   # n_probed: the numbers of edges evaluated for estimating p
-  
   eval_grid <- expand_grid(
     probed_ratio = c(0.5,1,2,4), # 0.5, 1, 2, and 4 times of the latent dimension
     catchment_id_look_up = catchment_id_look_ups,
@@ -509,10 +462,6 @@ stopCluster(cl)
 
 load("./data/dense_look_up.Rda")
 
-catchment_lookup_groups <- lapply(train_folds,
-                                  function(x)
-                                    data_process[-x, ] %>% pull(catchment_id) %>% unique())
-
 eval_summary <- eval_grid %>%
   mutate(r2 = map_dbl(out, function(x) x$r2),
          rmse = map_dbl(out, function(x) x$rmse)) %>%
@@ -540,7 +489,6 @@ eval_summary %>% transmute(
 
 
 # compare top retrieved model with actual top models
-
 get_predicted_model_rating <- function(catchment_id_look_up, out){
   predicted_model_rating <- data_process %>%
     filter(catchment_id == catchment_id_look_up,
@@ -552,17 +500,11 @@ get_predicted_model_rating <- function(catchment_id_look_up, out){
     pull(actual_rating)
 }
 
-# get the actual model rating of the retrieved model
+# get the actual model rating of the retrieved model instances
 eval_grid_expand <- eval_grid %>%
   mutate(
     predicted_model_rating = map2(catchment_id_look_up, out, get_predicted_model_rating)
   ) 
-
-eval_grid_expand %>%
-  mutate(catchment_group = map_dbl(catchment_id_look_up, function(y) which(
-    sapply(catchment_lookup_groups, function(x)
-      y %in% x)
-  )))
 
 eval_grid_expand %>%
   mutate(
@@ -672,14 +614,20 @@ eval_grid_expand %>%
 
 
 
+# Recycle -----------------------------------------------------------------
+
+catchment_lookup_groups <- lapply(train_folds,
+                                  function(x)
+                                    data_process[-x, ] %>% pull(catchment_id) %>% unique())
+
+eval_grid_expand %>%
+  mutate(catchment_group = map_dbl(catchment_id_look_up, function(y) which(
+    sapply(catchment_lookup_groups, function(x)
+      y %in% x)
+  )))
 
 
-
-
-
-
-
-# LM experiments ----------------------------------------------------------
+# LM experiments
 
 data_lm <- Q_probed %>%
   as.data.frame() %>%
