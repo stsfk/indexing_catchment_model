@@ -650,3 +650,109 @@ cor(data_lm_test$rating, preds)^2
 plot(data_lm_test$rating, preds)
 
 
+eval_grid_expand %>%
+  mutate(
+    actual_best_model_rating = map_dbl(out, function(x) x$top100_actual$rating %>% max),
+    hit1 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1]),
+    hit10 = map_dbl(out, function(x) sum(x$top100_actual$model_id[1:10] %in% x$top100_pred$model_id[1:10])/10),
+    hit100 = map_dbl(out, function(x) sum(x$top100_actual$model_id %in% x$top100_pred$model_id)/100),
+    diff1 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-x[1]),
+    diff10 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:10])),
+    diff100 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:100])),
+    diff1p = diff1/actual_best_model_rating*100,
+    diff10p = diff10/actual_best_model_rating*100,
+    diff100p = diff100/actual_best_model_rating*100
+  ) %>%
+  group_by(train_fold_id,probed_ratio) %>%
+  summarise(
+    hit1 = mean(hit1),
+    hit10 = mean(hit10),
+    hit100 = mean(hit100),
+    diff1 = mean(diff1),
+    diff10 = mean(diff10),
+    diff100 = mean(diff100),
+    diff1p = mean(diff1p),
+    diff10p = mean(diff10p),
+    diff100p = mean(diff100p),
+  ) %>%
+  group_by(probed_ratio) %>%
+  summarise(
+    hit1_sd = sd(hit1),
+    hit10_sd = sd(hit10),
+    hit100_sd = sd(hit100),
+    hit1 = mean(hit1),
+    hit10 = mean(hit10),
+    hit100 = mean(hit100),
+    diff1_sd = sd(diff1),
+    diff10_sd = sd(diff10),
+    diff100_sd = sd(diff100),
+    diff1 = mean(diff1),
+    diff10 = mean(diff10),
+    diff100 = mean(diff100),
+    diff1p_sd = sd(diff1p),
+    diff10p_sd = sd(diff10p),
+    diff100p_sd = sd(diff100p),
+    diff1p = mean(diff1p),
+    diff10p = mean(diff10p),
+    diff100p = mean(diff100p),
+  ) %>% 
+  transmute(
+    probed_ratio = probed_ratio,
+    hit1 = paste0(
+      formatC(hit1, format = "f", digits = 3),
+      "(",
+      formatC(hit1_sd, format = "f", digits = 3),
+      ")"
+    ),
+    hit10 = paste0(
+      formatC(hit10, format = "f", digits = 3),
+      "(",
+      formatC(hit10_sd, format = "f", digits = 3),
+      ")"
+    ),
+    hit100 = paste0(
+      formatC(hit100, format = "f", digits = 3),
+      "(",
+      formatC(hit100_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff1 = paste0(
+      formatC(diff1, format = "f", digits = 3),
+      "(",
+      formatC(diff1_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff10 = paste0(
+      formatC(diff10, format = "f", digits = 3),
+      "(",
+      formatC(diff10_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff100 = paste0(
+      formatC(diff100, format = "f", digits = 3),
+      "(",
+      formatC(diff100_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff1p = paste0(
+      formatC(diff1p, format = "f", digits = 3),
+      "(",
+      formatC(diff1p_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff10p = paste0(
+      formatC(diff10p, format = "f", digits = 3),
+      "(",
+      formatC(diff10p_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff100p = paste0(
+      formatC(diff100p, format = "f", digits = 3),
+      "(",
+      formatC(diff100p_sd, format = "f", digits = 3),
+      ")"
+    )
+  ) %>%
+  view()
+
+
