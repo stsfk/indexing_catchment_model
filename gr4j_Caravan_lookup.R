@@ -133,7 +133,6 @@ prepare_Qs_for_look_up  <- function(n_probed, train_portion, selected_catchment_
   
   Q_probed <- Q[selected_para_ids,]
   
-  
   # Q_test and rating_test
   model_id_test <- setdiff(1:n_instances, selected_para_ids)
   Q_test <- Q[model_id_test,]
@@ -243,6 +242,7 @@ top_n_nse <- function(p, n, selected_catchment_id){
   
   pred <- p %*% t(Q) %>% as.vector()
   
+  # get the ID of the retrieved instances
   top_n <- tibble(
     model_id = 1:n_instances,
     rating = pred,
@@ -252,6 +252,7 @@ top_n_nse <- function(p, n, selected_catchment_id){
     slice(1:n) %>%
     pull(model_id)
   
+  # actual NSE of the retrieved instances
   top_n_nse <- get_catchment_gof(selected_catchment_id,
                                   selected_para_ids = top_n,
                                   selected_paras = paras[top_n, ])%>% 
@@ -264,13 +265,6 @@ top_n_nse <- function(p, n, selected_catchment_id){
     rank = 1:n
   )
 }
-
-eval_grid <- expand_grid(
-  selected_catchment_id = catchments,
-  n_probed = round(latent_dim *c(0.5,1,2,4)),
-  repeats = 1:5,
-  results = vector("list",1)
-)
 
 catchment_top_n_nse_wrapper <- function(i, n_retrieved = 200) {
   
@@ -332,13 +326,13 @@ load("./data/carvan_look_up.Rda")
 
 prepare_data_plot <- function(n_retrieved){
   data_plot <- eval_grid %>%
-    dplyr::filter(!is.null(results)) %>%
     unnest(cols = c(results)) %>%
     filter(rank %in% c(1:n_retrieved)) %>%
     mutate(rating = 1 / (2 - nse) * 10) %>%
     group_by(catchment_id, repeats, n_probed) %>%
     summarise(retr_rating = max(rating)) 
   
+  # summarizing results obtained in different repeats
   data_plot %>%
     group_by(catchment_id, n_probed) %>%
     summarise(
@@ -375,8 +369,8 @@ ggplot(data_plot, aes(mean_rating, rating))+
   geom_point(color = "steelblue", shape = 1, size = 0.6, stroke = 0.35)+
   geom_abline(slope = 1)+
   geom_text(data = data_plot_text, aes(mean_rating,rating, label= text), size = 2.5, hjust = 0)+
-  xlab((bquote(Assocation~r["i,j"]~between~retrieved~model~instance~and~a~catchment))) +
-  ylab((bquote(Assocation~r["i,j"]~between~calibrated~model~instance~and~a~catchment))) + 
+  xlab((bquote(Assocation~r["new,j"]~values~between~retrieved~model~instances~and~catchments))) +
+  ylab((bquote(Assocation~r["new,j"]~values~between~calibrated~model~instances~and~catchments))) + 
   facet_grid(n_retrieved~n_probed)+
   scale_x_continuous(breaks = c(0:5)*2) +
   scale_y_continuous(breaks = c(2:5)*2) +
