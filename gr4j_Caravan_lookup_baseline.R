@@ -215,8 +215,8 @@ ggplot(data_plot, aes(mean_rating_random, mean_rating, color = n_retrieved, shap
   scale_shape(solid = FALSE)+
   labs(color = "Number of instance(s) retrieved/randomly selected",
        shape = "Number of instance(s) retrieved/randomly selected") +
-  xlab((bquote(Assocation~r["i,j"]~between~randomly~selected~model~instance~and~a~catchment))) +
-  ylab((bquote(Assocation~r["i,j"]~between~retrieved~model~instance~and~a~catchment))) + 
+  xlab((bquote(Assocation~r["new,j"]~values~between~randomly~selected~model~instances~and~catchments))) +
+  ylab((bquote(Assocation~r["new,j"]~values~between~retrieved~model~instances~and~catchments))) + 
   theme_bw(9)+
   theme(legend.position = "top")
 
@@ -236,7 +236,7 @@ ggplot(data_plot, aes(mean_rating_random, rating, color = n_retrieved, shape = n
   labs(color = "Number of instance(s) randomly sampled",
        shape = "Number of instance(s) randomly sampled") +
   xlab((bquote(Assocation~r["i,j"]~value~between~randomly~sampled~model~instance~and~a~catchment))) +
-  ylab((bquote(Assocation~r["i,j"]~value~between~calibrated~model~instance~and~a~catchment))) + 
+  ylab((bquote(Aaximum~assocation~r["new,j"]~values~between~retrieved~model~instances~and~catchments))) + 
   theme_bw(9)+
   theme(legend.position = "top")
 
@@ -256,8 +256,8 @@ ggplot(data_plot, aes(max_rating_random, max_rating, color = n_retrieved, shape 
   scale_shape(solid = FALSE)+
   labs(color = "Number of instance(s) retrieved/randomly selected",
        shape = "Number of instance(s) retrieved/randomly selected") +
-  xlab((bquote(Maximum~assocation~r["i,j"]~between~randomly~selected~model~instance~and~a~catchment))) +
-  ylab((bquote(Maximum~assocation~r["i,j"]~between~retrieved~model~instance~and~a~catchment))) + 
+  xlab((bquote(Maximum~assocation~r["new,j"]~values~between~randomly~selected~model~instances~and~catchments))) +
+  ylab((bquote(Maximum~assocation~r["new,j"]~values~between~retrieved~model~instances~and~catchments))) + 
   theme_bw(9)+
   theme(legend.position = "top")
 
