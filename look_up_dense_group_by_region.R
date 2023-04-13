@@ -16,6 +16,7 @@ pacman::p_load(tidyverse,
                Rfast,
                doParallel,
                GA,
+               caret,
                sf)
 
 # seed --------------------------------------------------------------------
@@ -72,50 +73,10 @@ catchment_points <- catchment_points %>%
   mutate(DIVISION = polygon_DIVISION[polygon_ids])
 
 # read association data
-weights <- read_csv("./data/SM.csv", col_names = c("KGE", "NSE", "RMSE"))
+data_process <- read_csv("data/processed_dense_dataset.csv")
 
-# 10 model classes in the dense data set
-model_class  <- c(
-  'm_01_collie1_1p_1s',
-  'm_05_ihacres_7p_1s',
-  'm_07_gr4j_4p_2s',
-  'm_13_hillslope_7p_2s',
-  'm_18_simhyd_7p_3s',
-  'm_22_vic_10p_3s',
-  'm_27_tank_12p_4s',
-  'm_28_xinanjiang_12p_4s',
-  'm_34_flexis_12p_5s',
-  'm_37_hbv_15p_5s'
-)
-
-n_catchments <- 533
-n_model_classes <- length(model_class)
-n_instances_per_class <-  nrow(weights)/n_catchments/n_model_classes # number of instance of each model class
-n_instances <- n_model_classes *n_instances_per_class
-
-# assign catchment id and model instance id to each row
-catchment_id <- rep(1:n_catchments, each = n_instances_per_class)
-data_raw <- weights %>%
-  bind_cols(expand_grid(model_class, catchment_id)) %>%
-  mutate(
-    instance_id = rep(1:n_instances_per_class, n() / n_instances_per_class),
-    model_id = paste(model_class, instance_id, sep = "_"),
-    model_id = factor(model_id, levels = unique(model_id)),
-    model_id = as.integer(model_id) # assign a unique id to each model
-  ) %>%
-  select(model_class, catchment_id, model_id, KGE, NSE, RMSE)
-
-# normalizing NSE on a scale from 0 to 10
-data_process <- data_raw %>%
-  mutate(NNSE = 1 / (2 - NSE) * 10) %>%
-  dplyr::select(catchment_id,
-                model_id,
-                NNSE) %>%
-  rename(rating = NNSE) %>%
-  mutate(record_id = 1:n())
-
-
-# Function ----------------------------------------------------------------
+n_catchments <- data_process$catchment_id %>% unique() %>% length()
+n_instances <- data_process$model_id %>% unique() %>% length()
 
 #  Splitting by geophysio. regions
 catchment_groups <- catchment_points %>% 
@@ -128,6 +89,7 @@ train_folds <-
   lapply(catchment_groups$catchment_ids, function(x)
     data_process %>% filter(!(catchment_id %in% x)) %>% pull(record_id))
 
+# Function ----------------------------------------------------------------
 
 base_look_up_split <- function(train_fold){
   # This function splits data_process into a data set for building recommender system,
@@ -276,6 +238,7 @@ derive_PQ <- function(data_train, data_val) {
     r = Reco()
     
     opts <- run$x
+    opts$nbin <- 2*nthread
     opts$nthread <- nthread
     opts$verbose <- F
     r$train(train_val_set, opts = opts)
@@ -330,11 +293,6 @@ p_r2 <- function(p, Q, rating) {
   # This function computes the R-squared of predicted ratings of models specified by Q
   # the target rating is `rating`
   cor(p %*% t(Q) %>% as.vector(), rating) ^ 2
-}
-
-p_at_k <- function(pred, actual, k = 1) {
-  # compute precision at K
-  sum(pred$model_id[1:k] %in% actual$model_id[1:k]) / k
 }
 
 prepare_Qs_for_look_up  <- function(Q, n_probed, train_portion, catchment_id_look_up){
@@ -725,8 +683,9 @@ eval_grid_expand %>%
 
 
 
+# Recycle -----------------------------------------------------------------
 
-# LM experiments ----------------------------------------------------------
+# LM experiments
 
 data_lm <- Q_probed %>%
   as.data.frame() %>%
@@ -747,5 +706,111 @@ plot(preds, data_lm_test$rating)
 
 cor(data_lm_test$rating, preds)^2
 plot(data_lm_test$rating, preds)
+
+
+eval_grid_expand %>%
+  mutate(
+    actual_best_model_rating = map_dbl(out, function(x) x$top100_actual$rating %>% max),
+    hit1 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1]),
+    hit10 = map_dbl(out, function(x) sum(x$top100_actual$model_id[1:10] %in% x$top100_pred$model_id[1:10])/10),
+    hit100 = map_dbl(out, function(x) sum(x$top100_actual$model_id %in% x$top100_pred$model_id)/100),
+    diff1 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-x[1]),
+    diff10 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:10])),
+    diff100 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:100])),
+    diff1p = diff1/actual_best_model_rating*100,
+    diff10p = diff10/actual_best_model_rating*100,
+    diff100p = diff100/actual_best_model_rating*100
+  ) %>%
+  group_by(train_fold_id,probed_ratio) %>%
+  summarise(
+    hit1 = mean(hit1),
+    hit10 = mean(hit10),
+    hit100 = mean(hit100),
+    diff1 = mean(diff1),
+    diff10 = mean(diff10),
+    diff100 = mean(diff100),
+    diff1p = mean(diff1p),
+    diff10p = mean(diff10p),
+    diff100p = mean(diff100p),
+  ) %>%
+  group_by(probed_ratio) %>%
+  summarise(
+    hit1_sd = sd(hit1),
+    hit10_sd = sd(hit10),
+    hit100_sd = sd(hit100),
+    hit1 = mean(hit1),
+    hit10 = mean(hit10),
+    hit100 = mean(hit100),
+    diff1_sd = sd(diff1),
+    diff10_sd = sd(diff10),
+    diff100_sd = sd(diff100),
+    diff1 = mean(diff1),
+    diff10 = mean(diff10),
+    diff100 = mean(diff100),
+    diff1p_sd = sd(diff1p),
+    diff10p_sd = sd(diff10p),
+    diff100p_sd = sd(diff100p),
+    diff1p = mean(diff1p),
+    diff10p = mean(diff10p),
+    diff100p = mean(diff100p),
+  ) %>% 
+  transmute(
+    probed_ratio = probed_ratio,
+    hit1 = paste0(
+      formatC(hit1, format = "f", digits = 3),
+      "(",
+      formatC(hit1_sd, format = "f", digits = 3),
+      ")"
+    ),
+    hit10 = paste0(
+      formatC(hit10, format = "f", digits = 3),
+      "(",
+      formatC(hit10_sd, format = "f", digits = 3),
+      ")"
+    ),
+    hit100 = paste0(
+      formatC(hit100, format = "f", digits = 3),
+      "(",
+      formatC(hit100_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff1 = paste0(
+      formatC(diff1, format = "f", digits = 3),
+      "(",
+      formatC(diff1_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff10 = paste0(
+      formatC(diff10, format = "f", digits = 3),
+      "(",
+      formatC(diff10_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff100 = paste0(
+      formatC(diff100, format = "f", digits = 3),
+      "(",
+      formatC(diff100_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff1p = paste0(
+      formatC(diff1p, format = "f", digits = 3),
+      "(",
+      formatC(diff1p_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff10p = paste0(
+      formatC(diff10p, format = "f", digits = 3),
+      "(",
+      formatC(diff10p_sd, format = "f", digits = 3),
+      ")"
+    ),
+    diff100p = paste0(
+      formatC(diff100p, format = "f", digits = 3),
+      "(",
+      formatC(diff100p_sd, format = "f", digits = 3),
+      ")"
+    )
+  ) %>%
+  view()
 
 
