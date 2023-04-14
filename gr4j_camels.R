@@ -131,7 +131,7 @@ results <-results %>% unnest(out) %>%
 # saving results
 save(paras, results, file = "./data/gr4j_camels.Rda")
 
-write.table(paras, quote = F, sep = " ", row.names = F, col.names = F, file = "data/gr4jparas_camels.txt")
+write.table(paras, quote = F, sep = " ", row.names = F, col.names = F, file = "./data/gr4jparas_camels.txt")
 
 # Stop --------------------------------------------------------------------
 
