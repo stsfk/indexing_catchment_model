@@ -1,3 +1,5 @@
+# The same random model instances were used in the computation of all catchment pairs.
+
 if (!require("pacman")) {
   install.packages("pacman")
 }
