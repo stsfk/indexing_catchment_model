@@ -9,7 +9,8 @@ pacman::p_load(tidyverse,
                Rfast,
                Rfast2,
                sf,
-               furrr)
+               furrr,
+               svglite)
 
 cl <- makeCluster(detectCores()-2)
 registerDoParallel(cl)
@@ -109,9 +110,9 @@ load("./data/camels_random_start_dist_m.Rda")
 
 
 catchment_points <- st_read("./data/catchment_points/points.shp")
-geophysio <- st_read("./data/physio_shp/physio.shp") %>%
-  st_make_valid(geophysio) %>%
-  select(DIVISION)
+# geophysio <- st_read("./data/physio_shp/physio.shp") %>%
+#   st_make_valid(geophysio) %>%
+#   select(DIVISION)
 
 # catchment_points <- catchment_points %>% st_transform(st_crs(geophysio))
 # 
@@ -152,7 +153,7 @@ catchment_points_with_rank <- catchment_points %>%
 
 data_plot %>% count(rank_interval)
 
-st_write(catchment_points_with_rank, dsn="./data/catchment_points/points_with_rank.shp",delete_dsn = T)
+# st_write(catchment_points_with_rank, dsn="./data/catchment_points/points_with_rank.shp",delete_dsn = T)
 
 
 ggplot(data_plot, aes(rank))+
@@ -162,6 +163,27 @@ ggplot(data_plot, aes(rank))+
        x = "Self-similarity score")+
   theme_minimal()
 
-library(svglite)
 ggsave(filename = "data/plot/rank_hist.svg", width = 5, height = 1.5, units = "in")
+
+
+
+# Verify fastR algorithm --------------------------------------------------
+
+x <- Q[1,]
+y <- Q[10,]
+LB <- apply(Q, 2, min)
+UB <- apply(Q, 2, max)
+
+n_samples <- 1000000
+
+input_dim <- length(x)
+random_numbers <- runif(n = n_samples*input_dim)
+random_matrix <- LB + (UB - LB) * matrix(random_numbers, nrow = input_dim)
+
+x_rating <- x%*%random_matrix %>% as.vector() 
+y_rating <- y%*%random_matrix %>% as.vector() 
+
+mean(abs(y_rating - x_rating))
+
+compute_distance(x, y, LB, UB, 1000000)
 
