@@ -133,7 +133,7 @@ fn_factory <- function(Q, rating) {
   function(x) {
     # This function computes the predicted
     pred <- Rfast::eachrow(Q, x, "*")
-    pred <- Rfast::rowsums(pred, parallel = T)
+    pred <- Rfast::rowsums(pred, parallel = F)
     
     - ModelMetrics::rmse(actual = rating, predicted = pred)
   }
@@ -207,7 +207,7 @@ derive_p <- function(n_probed, train_portion){
 }
 
 top_n_nse <- function(p, n_retrieved){
-  
+  # Q is from global environment
   pred <- p %*% t(Q) %>% as.vector()
   
   top_n <- tibble(
