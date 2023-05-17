@@ -510,8 +510,8 @@ eval_grid_expand %>%
   mutate(
     actual_best_model_rating = map_dbl(out, function(x) x$top100_actual$rating %>% max),
     hit1 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1]),
-    hit10 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id[1:10]),
-    hit100 = map_dbl(out, function(x) x$top100_actual$model_id[[1]] %in% x$top100_pred$model_id),
+    hit10 = map_dbl(out, function(x) sum(x$top100_actual$model_id[1:10] %in% x$top100_pred$model_id[1:10]))/10,
+    hit100 = map_dbl(out, function(x) sum(x$top100_actual$model_id %in% x$top100_pred$model_id))/100,
     diff1 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-x[1]),
     diff10 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:10])),
     diff100 = map2_dbl(predicted_model_rating, actual_best_model_rating, function(x,y) y-max(x[1:100])),
