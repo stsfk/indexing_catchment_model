@@ -26,7 +26,7 @@ clusterEvalQ(cl, library(tidyverse))
 
 # Data --------------------------------------------------------------------
 # This file contains processed P, T, PET, Q data for 2116 catchments outside the US
-data_raw <- read_csv("./data/Caravan/data_all_w_missing.csv") 
+data_raw <- read_csv("./data/processed_caravan_data.csv") 
 
 # Some PET is negative, causing problems in GR4J modeling
 data_raw$PET[data_raw$PET < 0] = 0
@@ -137,7 +137,7 @@ results <-results %>% unnest(out) %>%
   mutate(record_id = 1:n()) # give each row a unique ID
 
 # saving results
-save(paras, results, file = "./data/gr4j_carvan.Rda")
+save(paras, results, file = "./data/gr4j_caravan.Rda")
 
 write.table(paras, quote = F, sep = " ", row.names = F, col.names = F, file = "data/gr4jparas.txt")
 
