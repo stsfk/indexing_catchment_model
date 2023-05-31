@@ -6,17 +6,25 @@ pacman::p_load(
   tidyverse,
   lubridate,
   zeallot,
-  USAboundaries,
-  USAboundariesData,
-  sf
+  sf,
+  remotes
 )
 
+# USAboundaries and USAboundariesData were removed from CRAN as of 31 May 2023
+if (!require("USAboundaries")){
+  remotes::install_github("ropensci/USAboundaries")
+  library(USAboundaries)
+}
 
+if (!require("USAboundariesData")){
+  remotes::install_github("ropensci/USAboundariesData")
+  library(USAboundariesData)
+}
 
 # Data --------------------------------------------------------------------
 # Read contiguous US map
 contiguous_us <- us_states() %>% filter(!(name %in% c("Alaska", "Hawaii", "Puerto Rico"))) %>% st_union()
-# Read non-US catchement IDs
+# Read non-US catchement ID
 not_us_catchments <- st_read("./data/Caravan/caravan_not_us_catchments.shp") %>% pull(gauge_id)
 
 # filter out catchments contained in CAMELS
@@ -172,4 +180,4 @@ data_process <- data_process %>%
 
 data_process %>%
   arrange(catchment_id, date) %>%
-  write_csv(file = "./data/Caravan/data_all_w_missing.csv")
+  write_csv(file = "./data/processed_caravan_data.csv")
